@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Install Office Add-in</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+      .instructions {
+        margin: 20px 0;
+      }
+      .button {
+        padding: 10px 20px;
+        background-color: #0078d4;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Office Add-in Installation</h2>
+    <div class="instructions">
+      <p>To install the add-in, please:</p>
+      <ol>
+        <li>Download the installer</li>
+        <li>Right-click the downloaded file</li>
+        <li>Select "Run as administrator"</li>
+      </ol>
+    </div>
+    <button class="button" onclick="downloadInstaller()">
+      Download Installer
+    </button>
+
+    <script>
+      function downloadInstaller() {
+        fetch("http://localhost:3001/api/download-installer")
+          .then((response) => response.blob())
+          .then((blob) => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "install-addin.bat";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+          })
+          .catch((error) => {
+            console.error("Download failed:", error);
+            alert("Failed to download installer. Please try again.");
+          });
+      }
+    </script>
+  </body>
+</html>
