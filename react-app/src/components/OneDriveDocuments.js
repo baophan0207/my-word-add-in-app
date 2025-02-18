@@ -33,69 +33,48 @@ class OneDriveDocuments extends React.Component {
       // Check Word installation
       const wordResponse = await fetch("http://localhost:3001/api/check-word");
       const wordData = await wordResponse.json();
+      this.setState({ wordInstalled: wordData.isWordInstalled });
 
-      console.log("Word data:", wordData);
-
-      this.setState({
-        wordInstalled: wordData.installed,
-        status: wordData.installed ? "" : "Microsoft Word is not installed",
-      });
-
-      if (!wordData.installed) return;
+      if (!wordData.isWordInstalled) {
+        this.setState({
+          status: "Microsoft Word is not installed. Please install Word first.",
+        });
+        return;
+      }
 
       // Check Add-in installation
       const addinResponse = await fetch(
         "http://localhost:3001/api/check-addin"
       );
       const addinData = await addinResponse.json();
+      this.setState({ addinInstalled: addinData.isAddinInstalled });
 
-      console.log("Addin data:", addinData);
-
-      if (addinData.needsInstallation) {
-        // Ask user for confirmation
-        if (window.confirm(addinData.message)) {
-          // User accepted, proceed with installation
-          const installResponse = await fetch(
-            "http://localhost:3001/api/install-addin",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-            }
-          );
-          const installData = await installResponse.json();
-
-          if (installData.error) {
-            this.setState({
-              status: installData.error,
-              addinInstalled: false,
-            });
-          } else {
-            this.setState({
-              addinInstalled: true,
-              status: "Add-in installed successfully. Please restart Word.",
-            });
+      if (!addinData.isAddinInstalled) {
+        this.setState({ status: "Installing Word Add-in..." });
+        // Try to install the add-in
+        const installResponse = await fetch(
+          "http://localhost:3001/api/install-addin",
+          {
+            method: "POST",
           }
-        } else {
-          // User declined installation
+        );
+        const installData = await installResponse.json();
+
+        if (installData.success) {
           this.setState({
-            status: "Add-in installation was declined",
-            addinInstalled: false,
+            addinInstalled: true,
+            status: "Add-in installed successfully!",
+          });
+        } else {
+          this.setState({
+            status:
+              "Failed to install Add-in. Please try again or contact support.",
           });
         }
-      } else if (addinData.installed) {
-        this.setState({
-          addinInstalled: true,
-          status: "",
-        });
       }
     } catch (error) {
       console.error("Error checking Word and Add-in:", error);
-      this.setState({
-        status: "Error checking installations",
-        addinInstalled: false,
-      });
+      this.setState({ status: "Error checking Word and Add-in installation" });
     }
   };
 
@@ -119,15 +98,8 @@ class OneDriveDocuments extends React.Component {
       // Use the document URL from the server
       const baseUrl = doc.url;
 
-      // Add parameters for add-in
-      const addInId = "a8b28819-f6c0-42f7-b7c3-460fd297efa4"; // Your add-in ID
-      const addInVersion = "1.0.0.0";
-      const addInUrl = "https://localhost:3000/taskpane.html"; // Your add-in URL
-
       // Create protocol handler URL with add-in parameters
-      const protocolUrl = `ms-word:ofe|u|${baseUrl}?web=1&wdaddinId=${addInId}&wdAddinVersion=${addInVersion}&wdAddinUrl=${encodeURIComponent(
-        addInUrl
-      )}`;
+      const protocolUrl = `ms-word:ofe|u|${baseUrl}?web=1`;
 
       // Open Word Desktop
       window.open(protocolUrl);
@@ -146,6 +118,10 @@ class OneDriveDocuments extends React.Component {
             className="status-message"
             style={{
               color: this.state.status.includes("success") ? "green" : "red",
+              marginBottom: "20px",
+              padding: "10px",
+              backgroundColor: "#f8f8f8",
+              borderRadius: "4px",
             }}
           >
             {this.state.status}

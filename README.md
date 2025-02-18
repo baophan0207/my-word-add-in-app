@@ -1,70 +1,118 @@
-# Getting Started with Create React App
+# Word Add-in Application
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This project consists of three main components: a React application, a Node.js server, and a Word add-in.
+
+## Project Structure
+
+my-word-add-in-app/
+├── react-app/ # React frontend application
+├── node-server/ # Node.js backend server
+└── word-add-in/ # Word add-in files
+
+## Getting Started
+
+### React Application (react-app)
+
+1. Navigate to the React app directory:
+   bash
+   cd react-app
+
+2. Install dependencies:
+
+bash
+npm install
+
+3. Start the development server:
+   bash
+   npm start
+   The React app will run on http://localhost:3000
+
+### Node.js Server (node-server)
+
+1. Navigate to the Node.js server directory:
+   bash
+   cd node-server
+
+2. Install dependencies:
+   bash
+   npm install
+
+3. Start the server:
+   bash
+   node server.js
+   The server will run on http://localhost:3001
+
+### Word Add-in (word-add-in)
+
+The Word add-in can be installed in two ways:
+
+#### Option 1: Using the React Application
+
+1. Ensure both the React app and Node.js server are running
+2. Navigate to the React application in your browser
+3. Follow the in-app instructions to install the add-in
+
+#### Option 2: Manual Installation using PowerShell
+
+1. Navigate to the word-add-in directory:
+   bash
+   cd word-add-in
+
+2. Run PowerShell as Administrator
+
+3. Set the execution policy to run the script:
+   powershell
+   Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+
+4. Run the installation script:
+   powershell
+   .\install-addin.ps1
+
+5. Follow any on-screen prompts
+
+### Verifying the Installation
+
+After installation, you can verify the add-in is properly installed:
+
+1. Open Microsoft Word
+2. Check the Home tab for your add-in's button
+3. If you don't see the button:
+   - Click File > Options > Add-ins
+   - Look for your add-in in the list
+
+## Troubleshooting
+
+### Word Add-in Not Appearing
+
+If the add-in doesn't appear in Word after installation:
+
+1. Close all Word instances
+2. Clear the Office cache:
+   - Delete contents of: %LOCALAPPDATA%\Microsoft\Office\16.0\Wef\
+   - Delete contents of: %USERPROFILE%\AppData\Local\Microsoft\Office\16.0\WefCache
+3. Restart Word
+
+### Installation Errors
+
+If you encounter errors during installation:
+
+1. Ensure you're running PowerShell as Administrator
+2. Verify the manifest.xml file exists in the correct location
+3. Check that all paths in the manifest file are correct
 
 ## Available Scripts
 
-In the project directory, you can run:
+### React App
 
-### `npm start`
+- `npm start`: Runs the app in development mode
+- `npm test`: Launches the test runner
+- `npm run build`: Builds the app for production
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### Node Server
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+- `node server.js`: Starts the Node.js server
 
 ## Learn More
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started)
+- [Office Add-ins documentation](https://docs.microsoft.com/en-us/office/dev/add-ins/)

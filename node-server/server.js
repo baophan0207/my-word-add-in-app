@@ -8,6 +8,7 @@ const sudo = require("sudo-prompt");
 const execAsync = util.promisify(exec);
 const app = express();
 const port = 3001; // Different from your React dev server port
+const Registry = require("winreg");
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
@@ -48,212 +49,6 @@ app.get("/api/documents", (req, res) => {
   }
 });
 
-// Check if Office Word is installed
-app.get("/api/check-word", (req, res) => {
-  const wordPath =
-    "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE";
-  const wordPath2 =
-    "C:\\Program Files (x86)\\Microsoft Office\\root\\Office16\\WINWORD.EXE";
-
-  if (fs.existsSync(wordPath) || fs.existsSync(wordPath2)) {
-    res.json({ installed: true });
-  } else {
-    res.json({ installed: false });
-  }
-});
-
-// Check if add-in is installed
-app.get("/api/check-addin", async (req, res) => {
-  try {
-    const checkCommand =
-      'reg query "HKEY_CURRENT_USER\\Software\\Microsoft\\Office\\16.0\\WEF\\Developer" /v "UserDevManifests"';
-
-    try {
-      await execAsync(checkCommand);
-      console.log("Add-in is already installed");
-      res.json({ installed: true });
-    } catch (error) {
-      console.log("Add-in not installed");
-      res.json({
-        installed: false,
-        needsInstallation: true,
-        message:
-          "Add-in needs to be installed. Would you like to install it now?",
-      });
-    }
-  } catch (error) {
-    console.error("Error checking add-in:", error);
-    res.status(500).json({
-      installed: false,
-      error: "Error checking add-in status",
-      details: error.message,
-    });
-  }
-});
-
-// Install add-in when user accepts
-app.post("/api/install-addin", async (req, res) => {
-  try {
-    console.log("Starting add-in installation...");
-
-    // Get absolute path to manifest
-    const manifestPath = path
-      .resolve(__dirname, "../word-add-in/manifest.xml")
-      .replace(/\\/g, "\\\\");
-
-    // Create PowerShell installation script
-    const installScript = `
-      $ManifestPath = "${manifestPath}"
-      
-      # Kiểm tra manifest
-      if (-not (Test-Path $ManifestPath)) {
-        throw "Manifest file not found at: $ManifestPath"
-      }
-
-      try {
-        # Registry paths
-        $DevPath = "HKCU:\\Software\\Microsoft\\Office\\16.0\\WEF\\Developer"
-        $TrustedPath = "HKCU:\\Software\\Microsoft\\Office\\16.0\\WEF\\TrustedCatalogs"
-        $WordOptionsPath = "HKCU:\\Software\\Microsoft\\Office\\16.0\\Word\\Options"
-        $AddinsPath = "HKCU:\\Software\\Microsoft\\Office\\Word\\Addins"
-        
-        # Xóa đăng ký cũ
-        Remove-Item -Path $DevPath -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path "$TrustedPath\\MyAddin" -Recurse -Force -ErrorAction SilentlyContinue
-        
-        # Tạo registry keys
-        New-Item -Path $DevPath -Force | Out-Null
-        New-Item -Path "$TrustedPath\\MyAddin" -Force | Out-Null
-        New-Item -Path $WordOptionsPath -Force | Out-Null
-        
-        # Đăng ký manifest trong Developer
-        Set-ItemProperty -Path $DevPath -Name "UserDevManifests" -Value $ManifestPath -Type String
-        
-        # Cấu hình Trusted Catalog
-        Set-ItemProperty -Path "$TrustedPath\\MyAddin" -Name "Id" -Value "MyAddin" -Type String
-        Set-ItemProperty -Path "$TrustedPath\\MyAddin" -Name "Path" -Value $ManifestPath -Type String
-        Set-ItemProperty -Path "$TrustedPath\\MyAddin" -Name "Type" -Value 2 -Type DWord
-        Set-ItemProperty -Path "$TrustedPath\\MyAddin" -Name "Flags" -Value 1 -Type DWord
-        
-        # Bật developer tools
-        Set-ItemProperty -Path $WordOptionsPath -Name "DeveloperTools" -Value 1 -Type DWord
-        Set-ItemProperty -Path $WordOptionsPath -Name "EnableRibbonCustomization" -Value 1 -Type DWord
-        
-        # Đăng ký add-in
-        $AddinID = [System.IO.Path]::GetFileNameWithoutExtension($ManifestPath)
-        $AddinKey = "$AddinsPath\\$AddinID"
-        New-Item -Path $AddinKey -Force | Out-Null
-        Set-ItemProperty -Path $AddinKey -Name "Description" -Value "My Word Add-in" -Type String
-        Set-ItemProperty -Path $AddinKey -Name "FriendlyName" -Value "My Word Add-in" -Type String
-        Set-ItemProperty -Path $AddinKey -Name "LoadBehavior" -Value 3 -Type DWord
-        Set-ItemProperty -Path $AddinKey -Name "Manifest" -Value $ManifestPath -Type String
-        
-        # Trust localhost
-        CheckNetIsolation.exe LoopbackExempt -a -n="Microsoft.Win32WebViewHost_cw5n1h2txyewy"
-        
-        # Clear cache
-        $WefPath = "$env:LOCALAPPDATA\\Microsoft\\Office\\16.0\\Wef"
-        if (Test-Path $WefPath) {
-            Remove-Item -Path "$WefPath\\*" -Recurse -Force
-        }
-        
-        # Xóa cache IE
-        RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess 255
-        
-        # Dừng Word nếu đang chạy
-        Get-Process "WINWORD" -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-Sleep -Seconds 2
-
-        Write-Host "✅ Add-in installed successfully at: $ManifestPath"
-        
-      } catch {
-        Write-Error "Installation error: $_"
-        throw
-      }
-    `;
-
-    // Save and execute script with admin privileges
-    const scriptPath = path.join(__dirname, "install-addin.ps1");
-    fs.writeFileSync(scriptPath, installScript);
-
-    try {
-      await new Promise((resolve, reject) => {
-        exec(
-          `powershell -ExecutionPolicy Bypass -NoProfile -Command "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \\"${scriptPath}\\"'"`,
-          (error, stdout, stderr) => {
-            fs.unlinkSync(scriptPath);
-            if (error) {
-              console.error("Installation error:", error);
-              reject(error);
-            } else {
-              console.log("Installation output:", stdout);
-              resolve(stdout);
-            }
-          }
-        );
-      });
-
-      console.log("Add-in installation completed successfully");
-      res.json({
-        installed: true,
-        justInstalled: true,
-        message:
-          "Add-in installed successfully. Please:\n" +
-          "1. Ensure dev server is running (npm start)\n" +
-          "2. Close all Word instances\n" +
-          "3. Clear these caches:\n" +
-          "   - %LOCALAPPDATA%\\Microsoft\\Office\\16.0\\Wef\n" +
-          "   - Internet Explorer cache\n" +
-          "4. Start Word\n" +
-          "5. Check Insert > My Add-ins\n" +
-          "6. If issues persist:\n" +
-          "   - Check manifest.xml is valid\n" +
-          "   - Verify localhost:3000 is accessible\n" +
-          "   - Run as administrator",
-        manifestPath: manifestPath,
-      });
-    } catch (installError) {
-      console.error("Installation failed:", installError);
-      res.json({
-        installed: false,
-        error: "Installation failed. Please check administrator privileges.",
-        details: installError.message,
-        manifestPath: manifestPath,
-      });
-    }
-  } catch (error) {
-    console.error("Server error:", error);
-    res.status(500).json({
-      installed: false,
-      error: "Server error installing add-in",
-      details: error.message,
-    });
-  }
-});
-
-// Add verification endpoint
-app.get("/api/verify-installation", (req, res) => {
-  const verifyScript = `
-    $RegistryPath = "HKCU:\\Software\\Microsoft\\Office\\16.0\\WEF\\Developer"
-    if (Test-Path $RegistryPath) {
-      $manifest = Get-ItemProperty -Path $RegistryPath -Name "UserDevManifests" -ErrorAction SilentlyContinue
-      if ($manifest) {
-        Write-Host "Add-in is installed"
-        exit 0
-      }
-    }
-    Write-Host "Add-in is not installed"
-    exit 1
-  `;
-
-  exec(`powershell -Command "${verifyScript}"`, (error, stdout) => {
-    res.json({
-      installed: !error,
-      details: stdout.trim(),
-    });
-  });
-});
-
 // Endpoint to receive document updates
 app.post("/api/document-update", (req, res) => {
   const { timestamp, previousLength, currentLength } = req.body;
@@ -274,6 +69,125 @@ app.post("/api/document-update", (req, res) => {
 // Endpoint to get all updates
 app.get("/api/document-updates", (req, res) => {
   res.json(documentUpdates);
+});
+
+// 1. Check if Microsoft Word is installed
+app.get("/api/check-word", async (req, res) => {
+  try {
+    const regKey = new Registry({
+      hive: Registry.HKLM,
+      key: "\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\WINWORD.EXE",
+    });
+
+    regKey.keyExists((err, exists) => {
+      if (err) {
+        res.status(500).json({
+          error: "Error checking Word installation",
+          details: err.message,
+        });
+        return;
+      }
+      res.json({ isWordInstalled: exists });
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: "Failed to check Word installation",
+      details: error.message,
+    });
+  }
+});
+
+// 2. Check if Add-in is installed
+app.get("/api/check-addin", async (req, res) => {
+  try {
+    const regKey = new Registry({
+      hive: Registry.HKCU,
+      key: "\\Software\\Microsoft\\Office\\Word\\Addins\\f85491a7-0cf8-4950-b18c-d85ae9970d61", // Replace with your add-in ID
+    });
+
+    regKey.keyExists((err, exists) => {
+      if (err) {
+        res.status(500).json({
+          error: "Error checking Add-in installation",
+          details: err.message,
+        });
+        return;
+      }
+      res.json({ isAddinInstalled: exists });
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: "Failed to check Add-in installation",
+      details: error.message,
+    });
+  }
+});
+
+// 3. Install Add-in
+app.post("/api/install-addin", async (req, res) => {
+  const manifestPath =
+    "file:///" +
+    path.join(__dirname, "../word-add-in/manifest.xml").replace(/\\/g, "/");
+  // Add UTF-16LE BOM and ensure Windows-style line endings
+  const regCommand = `\ufeffWindows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\Microsoft\\Office\\Word\\Addins\\f85491a7-0cf8-4950-b18c-d85ae9970d61]\r\n"Description"="A template to get started."\r\n"FriendlyName"="word-add-in"\r\n"LoadBehavior"=dword:00000003\r\n"Manifest"="${manifestPath}"\r\n"Type"="Manifest"\r\n`;
+
+  const regFilePath = path.join(__dirname, "install-addin.reg");
+
+  try {
+    // Verify manifest file exists (use the actual file path, not the file:/// URL)
+    const actualManifestPath = path.join(
+      __dirname,
+      "../word-add-in/manifest.xml"
+    );
+    if (!fs.existsSync(actualManifestPath)) {
+      res.status(500).json({
+        error: "Manifest file not found",
+        details:
+          "The add-in manifest file could not be found at the specified location",
+      });
+      return;
+    }
+
+    // Write the file with UTF-16LE encoding
+    await fs.promises.writeFile(regFilePath, regCommand, {
+      encoding: "utf16le",
+    });
+
+    const options = {
+      name: "WordAddinInstaller",
+    };
+
+    sudo.exec(
+      `reg import "${regFilePath}"`,
+      options,
+      (error, stdout, stderr) => {
+        // Clean up the temporary registry file
+        fs.unlink(regFilePath, (unlinkError) => {
+          if (unlinkError) {
+            console.error("Error cleaning up registry file:", unlinkError);
+          }
+        });
+
+        if (error) {
+          res.status(500).json({
+            error: "Failed to install Add-in",
+            details: error.message,
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          message: "Add-in installed successfully",
+        });
+      }
+    );
+  } catch (error) {
+    res.status(500).json({
+      error: "Failed to prepare Add-in installation",
+      details: error.message,
+    });
+  }
 });
 
 app.listen(port, () => {
