@@ -19,28 +19,39 @@ my-word-add-in-app/
 
 2. Install dependencies:
 
-bash
+```bash
 npm install
+```
 
 3. Start the development server:
-   bash
-   npm start
-   The React app will run on http://localhost:3000
+
+```bash
+npm start
+```
+
+The React app will run on http://localhost:3000
 
 ### Node.js Server (node-server)
 
 1. Navigate to the Node.js server directory:
-   bash
-   cd node-server
+
+```bash
+cd node-server
+```
 
 2. Install dependencies:
-   bash
-   npm install
+
+```bash
+npm install
+```
 
 3. Start the server:
-   bash
-   node server.js
-   The server will run on http://localhost:3001
+
+```bash
+npm start
+```
+
+The server will run on http://localhost:3001
 
 ### Word Add-in (word-add-in)
 
@@ -55,18 +66,24 @@ The Word add-in can be installed in two ways:
 #### Option 2: Manual Installation using PowerShell
 
 1. Navigate to the word-add-in directory:
-   bash
-   cd word-add-in
+
+```bash
+cd word-add-in
+```
 
 2. Run PowerShell as Administrator
 
 3. Set the execution policy to run the script:
-   powershell
-   Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+
+```bash
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+```
 
 4. Run the installation script:
-   powershell
-   .\install-addin.ps1
+
+```bash
+.\install-addin.ps1
+```
 
 5. Follow any on-screen prompts
 
@@ -99,6 +116,33 @@ If you encounter errors during installation:
 1. Ensure you're running PowerShell as Administrator
 2. Verify the manifest.xml file exists in the correct location
 3. Check that all paths in the manifest file are correct
+
+### Removing the Add-in Manually
+
+If you need to remove the add-in manually:
+
+1. Open Registry Editor:
+
+   - Press `Win + R`
+   - Type `regedit` and press Enter
+   - Click "Yes" if prompted by UAC
+
+2. Navigate to:
+
+   ```
+   HKEY_CURRENT_USER\Software\Microsoft\Office\Word\Addins
+   ```
+
+3. Find your add-in:
+
+   - Look for the ID: `f85491a7-0cf8-4950-b18c-d85ae9970d61`
+   - Right-click on it
+   - Select "Delete"
+   - Click "Yes" to confirm
+
+4. Close Registry Editor
+
+5. Restart Word for the changes to take effect
 
 ## Available Scripts
 
