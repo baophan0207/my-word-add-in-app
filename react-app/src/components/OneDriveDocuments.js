@@ -52,8 +52,14 @@ class OneDriveDocuments extends React.Component {
       if (!addinData.isAddinInstalled) {
         this.setState({ status: "Installing Word Add-in..." });
         // Try to install the add-in
+        // const installResponse = await fetch(
+        //   "http://localhost:3001/api/install-addin",
+        //   {
+        //     method: "POST",
+        //   }
+        // );
         const installResponse = await fetch(
-          "http://localhost:3001/api/install-addin",
+          "http://localhost:3001/api/setup-office-addin",
           {
             method: "POST",
           }

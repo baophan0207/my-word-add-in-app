@@ -190,6 +190,77 @@ app.post("/api/install-addin", async (req, res) => {
   }
 });
 
+// Setup Office Add-in
+app.post("/api/setup-office-addin", async (req, res) => {
+  try {
+    const scriptPath = path.join(
+      __dirname,
+      "../word-add-in/Setup-OfficeAddin.ps1"
+    );
+
+    // Verify script exists
+    if (!fs.existsSync(scriptPath)) {
+      res.status(500).json({
+        error: "Setup script not found",
+        details: "The PowerShell setup script could not be found",
+      });
+      return;
+    }
+
+    const options = {
+      name: "WordAddinSetup",
+    };
+
+    // Run PowerShell script with elevated privileges
+    sudo.exec(
+      `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "${scriptPath}"`,
+      options,
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error("Setup error:", error);
+          res.status(500).json({
+            error: "Failed to setup Office Add-in",
+            details: error.message,
+            stdout: stdout,
+            stderr: stderr,
+          });
+          return;
+        }
+
+        // Check if the share was created successfully
+        const sharePath = `\\\\${require("os").hostname()}\\OfficeAddins`;
+        if (!fs.existsSync(sharePath)) {
+          res.status(500).json({
+            error: "Share creation failed",
+            details: "The network share was not created successfully",
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          message: "Office Add-in setup completed successfully",
+          nextSteps: [
+            "1. Start Microsoft Word",
+            "2. Click File > Options > Trust Center > Trust Center Settings",
+            "3. Click Trusted Add-in Catalogs",
+            "4. Verify that the shared folder is listed",
+            "5. Check 'Show in Menu'",
+            "6. Click OK and restart Word",
+          ],
+          sharePath: sharePath,
+          output: stdout,
+        });
+      }
+    );
+  } catch (error) {
+    res.status(500).json({
+      error: "Failed to initiate setup",
+      details: error.message,
+    });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 });

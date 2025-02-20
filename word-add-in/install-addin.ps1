@@ -6,8 +6,8 @@ New-Item -Path $registryPath -Force
 
 # Set the required registry values
 New-ItemProperty -Path $registryPath -Name "Description" -Value "My Word Add-in Description" -PropertyType String -Force
-New-ItemProperty -Path $registryPath -Name "FriendlyName" -Value "My Word Add-in" -PropertyType String -Force
+New-ItemProperty -Path $registryPath -Name "FriendlyName" -Value "f85491a7-0cf8-4950-b18c-d85ae9970d61" -PropertyType String -Force
 New-ItemProperty -Path $registryPath -Name "LoadBehavior" -Value 3 -PropertyType DWord -Force
-New-ItemProperty -Path $registryPath -Name "Manifest" -Value "file:///D:/Task/Working_On/my-word-add-in-app/word-add-in/manifest.xml" -PropertyType String -Force
+New-ItemProperty -Path $registryPath -Name "Manifest" -Value "file:///D:\Task\Working_On\my-word-add-in-app\word-add-in\manifest.xml" -PropertyType String -Force
 
 Write-Output "Add-in installed and enabled successfully."
