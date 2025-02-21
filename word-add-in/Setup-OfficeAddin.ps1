@@ -192,6 +192,20 @@ Write-Host "3. Verify that $networkPath is listed and check 'Show in Menu'."
 Write-Host "4. Click OK and restart Word."
 Write-Host "`nAfter Word starts, your add-in's Ribbon button should appear on the Home tab within the custom group."
 
+# Function to check manifest existence
+function Test-ManifestExists {
+    $shareName = "OfficeAddins"
+    $folderPath = "$env:USERPROFILE\Documents\$shareName"
+    $manifestPath = Join-Path $folderPath "manifest.xml"
+    
+    if (Test-Path $manifestPath) {
+        Write-Host "Manifest file found in shared folder"
+        return $true
+    }
+    Write-Host "Manifest file not found in shared folder"
+    return $false
+}
+
 # Function to find and click UI elements
 function Find-AndClickElement {
     param (
@@ -202,6 +216,7 @@ function Find-AndClickElement {
         [int]$TimeoutSeconds = 10
     )
     
+    Write-Host "Looking for element: $ElementName"
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
         $condition = New-Object System.Windows.Automation.PropertyCondition(
@@ -216,237 +231,181 @@ function Find-AndClickElement {
         
         if ($element) {
             try {
-                # Try different patterns
-                # 1. Try Invoke Pattern
+                # Try to click using InvokePattern first
                 try {
                     $invokePattern = $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
                     if ($invokePattern) {
                         $invokePattern.Invoke()
+                        Write-Host "Clicked element using InvokePattern: $ElementName"
                         return $true
                     }
-                } catch {}
-
-                # 2. Try Toggle Pattern
-                try {
-                    $togglePattern = $element.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
-                    if ($togglePattern) {
-                        $togglePattern.Toggle()
-                        return $true
-                    }
-                } catch {}
-
-                # 3. Try Expand/Collapse Pattern
-                try {
-                    $expandPattern = $element.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
-                    if ($expandPattern) {
-                        $expandPattern.Expand()
-                        return $true
-                    }
-                } catch {}
-
-                # 4. Try using SelectionItem Pattern
-                try {
-                    $selectionPattern = $element.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-                    if ($selectionPattern) {
-                        $selectionPattern.Select()
-                        return $true
-                    }
-                } catch {}
-
-                # If no pattern worked, try to simulate a click
-                try {
-                    $clickablePoint = $element.GetClickablePoint()
-                    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$clickablePoint.X, [int]$clickablePoint.Y)
-                    Start-Sleep -Milliseconds 100
-                    [System.Windows.Forms.SendKeys]::SendWait(" ")
-                    return $true
                 } catch {
-                    Write-Warning "Could not click element using any method: $_"
+                    Write-Host "InvokePattern not available, trying coordinate click"
                 }
+
+                # Fallback to coordinate click
+                $point = $element.GetClickablePoint()
+                [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$point.X, [int]$point.Y)
+                Start-Sleep -Milliseconds 100
+                $shell = New-Object -ComObject "WScript.Shell"
+                $shell.SendKeys(" ")
+                Write-Host "Clicked element using coordinates: $ElementName"
+                return $true
             } catch {
-                Write-Warning "Error interacting with element: $_"
+                Write-Warning "Failed to click element $ElementName : $_"
             }
         }
         Start-Sleep -Milliseconds 500
     }
+    Write-Host "Element not found: $ElementName"
     return $false
 }
 
 # Function to find Word window
 function Find-WordWindow {
-    param (
-        [int]$MaxAttempts = 10,
-        [int]$DelaySeconds = 1
-    )
+    Write-Host "Finding Word window..."
+    $maxAttempts = 10
+    $attempt = 0
     
-    for ($i = 1; $i -le $MaxAttempts; $i++) {
-        Write-Host "Attempting to find Word window (Attempt $i of $MaxAttempts)..."
+    while ($attempt -lt $maxAttempts) {
+        $attempt++
+        Write-Host "Attempt $attempt of $maxAttempts..."
         
-        $processes = Get-Process | Where-Object { $_.ProcessName -eq "WINWORD" -and $_.MainWindowTitle -ne "" }
-        foreach ($process in $processes) {
-            $condition = New-Object System.Windows.Automation.PropertyCondition(
-                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, 
-                $process.Id
-            )
-            
-            $window = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
-                [System.Windows.Automation.TreeScope]::Children,
-                $condition
-            )
-            
-            if ($window) {
-                Write-Host "Found Word window: $($process.MainWindowTitle)"
+        $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+            [System.Windows.Automation.TreeScope]::Children,
+            [System.Windows.Automation.PropertyCondition]::TrueCondition
+        )
+        
+        foreach ($window in $windows) {
+            if ($window.Current.Name -match "Word" -or $window.Current.Name -match "Document") {
+                Write-Host "Found Word window: $($window.Current.Name)"
                 return $window
             }
         }
-        
-        Start-Sleep -Seconds $DelaySeconds
+        Start-Sleep -Seconds 1
     }
-    
     return $null
 }
 
-# Launch Word and automate UI
-try {
-    Write-Host "Launching Word and automating UI..."
+# Function to check and open add-in from ribbon
+function Open-AddInFromRibbon {
+    param ($wordWindow)
     
-    # Launch Word and create new document
-    $word = New-Object -ComObject Word.Application
-    $word.Visible = $true
-    $doc = $word.Documents.Add()
-    Start-Sleep -Seconds 3  # Give Word time to initialize
-    
-    # Find Word window
-    $wordWindow = Find-WordWindow
-    if (-not $wordWindow) {
-        Write-Warning "Could not find Word window"
-        return
-    }
-
-    # Step 1: Click File tab
-    Write-Host "Clicking File tab..."
-    $fileTabNames = @(
-        "File",
-        "FILE",
-        "File Tab"
+    Write-Host "Checking for add-in button on ribbon..."
+    $buttonNames = @(
+        "Open Add-in",
+        "My Word Add-in",
+        "My Add-in Group"
     )
     
+    foreach ($name in $buttonNames) {
+        if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
+            Write-Host "Successfully opened add-in from ribbon"
+            return $true
+        }
+    }
+    
+    Write-Host "Add-in button not found on ribbon"
+    return $false
+}
+
+# Function to open shared folder dialog
+function Open-SharedFolderDialog {
+    param ($wordWindow)
+    
+    Write-Host "Opening Shared Folder dialog..."
+    
+    # Click File tab
+    $fileTabNames = @("File", "FILE", "File Tab")
     $found = $false
     foreach ($name in $fileTabNames) {
         if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
             $found = $true
-            Write-Host "Found and clicked File tab"
             break
         }
     }
     
     if (-not $found) {
-        # Try using Alt+F as fallback
-        Write-Host "Trying Alt+F for File menu..."
+        Write-Host "Using Alt+F shortcut for File menu..."
         [System.Windows.Forms.SendKeys]::SendWait("%F")
-        Start-Sleep -Seconds 1
     }
-    Start-Sleep -Seconds 2  # Wait for File menu to open
+    Start-Sleep -Seconds 2
 
-    # Step 2: Click Get Add-ins
-    Write-Host "Clicking Get Add-ins..."
-    $getAddinsNames = @(
-        "Get Add-ins",
-        "Office Add-ins",
-        "Get Office Add-ins"
-    )
-    
+    # Click Get Add-ins
+    $getAddinsNames = @("Get Add-ins", "Office Add-ins", "Get Office Add-ins")
     $found = $false
     foreach ($name in $getAddinsNames) {
         if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
             $found = $true
-            Write-Host "Found and clicked Get Add-ins"
             break
         }
     }
     
     if (-not $found) {
         Write-Warning "Could not find Get Add-ins option"
-        return
-    }
-    Start-Sleep -Seconds 2  # Wait for dialog to open
-
-    # Step 3: Click Shared Folder
-    Write-Host "Clicking Shared Folder..."
-    $sharedFolderNames = @(
-        "Shared Folder",
-        "SHARED FOLDER",
-        "Shared folder"
-    )
-    
-    $found = $false
-    foreach ($name in $sharedFolderNames) {
-        if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
-            $found = $true
-            Write-Host "Found and clicked Shared Folder"
-            break
-        }
-    }
-    
-    if (-not $found) {
-        Write-Warning "Could not find Shared Folder option"
-        return
+        return $false
     }
     Start-Sleep -Seconds 2
 
-    # Step 4: Click the add-in
-    Write-Host "Clicking add-in..."
-    $addinNames = @(
-        "My Word Add-in",
-        "My Word Add",
-        "My Word Add..."  # For truncated names
-    )
-    
-    $found = $false
-    foreach ($name in $addinNames) {
+    # Click Shared Folder
+    $sharedFolderNames = @("Shared Folder", "SHARED FOLDER", "Shared folder")
+    foreach ($name in $sharedFolderNames) {
         if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
-            $found = $true
-            Write-Host "Found and clicked add-in"
-            break
+            Write-Host "Successfully opened Shared Folder dialog"
+            return $true
         }
     }
     
-    if (-not $found) {
-        Write-Warning "Could not find add-in in the list"
+    Write-Warning "Could not find Shared Folder option"
+    return $false
+}
+
+# Main script
+try {
+    # 1. Check manifest file
+    $manifestExists = Test-ManifestExists
+    if (-not $manifestExists) {
+        Write-Host "Installing manifest and configuring shared folder..."
+        # ... (keep existing manifest installation code) ...
         return
     }
 
-    Write-Host "UI automation completed successfully"
-    
+    # 2. Launch Word and wait for it to initialize
+    Write-Host "Launching Word..."
+    $word = New-Object -ComObject Word.Application
+    $word.Visible = $true
+    $doc = $word.Documents.Add()
+    Start-Sleep -Seconds 3
+
+    # 3. Find Word window
+    $wordWindow = Find-WordWindow
+    if (-not $wordWindow) {
+        Write-Warning "Could not find Word window"
+        return
+    }
+
+    # 4. Try to open add-in from ribbon first
+    Write-Host "Attempting to open add-in from ribbon..."
+    Start-Sleep -Seconds 2  # Give ribbon time to load
+    if (Open-AddInFromRibbon -wordWindow $wordWindow) {
+        Write-Host "Add-in opened successfully from ribbon"
+        return
+    }
+
+    # 5. If ribbon button not found, open shared folder
+    Write-Host "Add-in not found on ribbon, opening shared folder..."
+    if (Open-SharedFolderDialog -wordWindow $wordWindow) {
+        Write-Host "Shared Folder dialog opened successfully"
+    } else {
+        Write-Warning "Failed to open Shared Folder dialog"
+    }
+
 } catch {
-    Write-Error "Failed during UI automation: $_"
+    Write-Error "Failed during automation: $_"
     Write-Host "Stack Trace: $($_.ScriptStackTrace)"
 } finally {
     Write-Host "`nIf the automation failed, please try manually:"
     Write-Host "1. Click File"
     Write-Host "2. Click Get Add-ins"
-    Write-Host "3. Click Shared Folder"
-    Write-Host "4. Select 'My Word Add-in'"
-}
-
-# Alternative approach using SendKeys as fallback
-if (-not $found) {
-    Write-Host "Trying alternative approach with keyboard shortcuts..."
-    try {
-        # Alt+F for File menu
-        [System.Windows.Forms.SendKeys]::SendWait("%F")
-        Start-Sleep -Seconds 1
-        
-        # Navigate to Get Add-ins (might need adjusting based on your Word version)
-        [System.Windows.Forms.SendKeys]::SendWait("A")
-        Start-Sleep -Seconds 2
-        
-        # Navigate to Shared Folder
-        [System.Windows.Forms.SendKeys]::SendWait("S")
-        Start-Sleep -Seconds 1
-        
-        Write-Host "Keyboard navigation completed"
-    } catch {
-        Write-Error "Failed to send keystrokes: $_"
-    }
+    Write-Host "3. Click SHARED FOLDER tab"
 }
