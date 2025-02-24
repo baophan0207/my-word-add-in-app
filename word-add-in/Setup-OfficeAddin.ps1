@@ -6,8 +6,8 @@ if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 }
 
 # Close any running instance of Word
-Get-Process -Name WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $_.Kill() }
-Start-Sleep -Seconds 2  # Wait for Word to close
+# Get-Process -Name WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $_.Kill() }
+# Start-Sleep -Seconds 2  # Wait for Word to close
 
 # Clear existing trusted catalogs (if any)
 Remove-Item -Path "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\*" -Force -ErrorAction SilentlyContinue
@@ -623,22 +623,116 @@ function Open-SharedFolderDialog {
     return $false
 }
 
+function Find-WordWindowWithButton {
+    param (
+        [string]$buttonName = "Enable Editing"
+    )
+    
+    Write-Host "Looking for Word window with '$buttonName' button..."
+    
+    try {
+        $wordProcesses = Get-Process | Where-Object { $_.ProcessName -eq "WINWORD" }
+        Write-Host "Found $($wordProcesses.Count) Word processes"
+        
+        foreach ($proc in $wordProcesses) {
+            try {
+                $element = [System.Windows.Automation.AutomationElement]::FromHandle($proc.MainWindowHandle)
+                
+                if ($element) {
+                    $condition = New-Object System.Windows.Automation.PropertyCondition(
+                        [System.Windows.Automation.AutomationElement]::NameProperty,
+                        $buttonName
+                    )
+                    
+                    $button = $element.FindFirst(
+                        [System.Windows.Automation.TreeScope]::Descendants,
+                        $condition
+                    )
+                    
+                    if ($button) {
+                        Write-Host "Found window with '$buttonName' button"
+                        return @{
+                            Window = $element
+                            Button = $button
+                        }
+                    }
+                }
+            } catch {
+                Write-Host "Error checking process $($proc.Id): $_"
+                continue
+            }
+        }
+        return $null
+    } catch {
+        Write-Host "Error searching for Word windows: $_"
+        return $null
+    }
+}
+
+function Click-EnableEditing {
+    param (
+        $button
+    )
+    
+    try {
+        Write-Host "Attempting to click Enable Editing button..."
+        $invokePattern = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+        if ($invokePattern) {
+            $invokePattern.Invoke()
+            Write-Host "Successfully clicked Enable Editing button"
+            Start-Sleep -Seconds 2
+            return $true
+        }
+        return $false
+    } catch {
+        Write-Host "Error clicking Enable Editing button: $_"
+        return $false
+    }
+}
+
 # Main script
 try {
-    # 1. Check manifest file
-    $manifestExists = Test-ManifestExists
-    if (-not $manifestExists) {
-        Write-Host "Installing manifest and configuring shared folder..."
-        # ... (keep existing manifest installation code) ...
-        return
-    }
-
-    # 2. Launch Word and wait for it to initialize
-    Write-Host "Launching Word..."
-    $word = New-Object -ComObject Word.Application
-    $word.Visible = $true
-    $doc = $word.Documents.Add()
+    Write-Host "Starting setup process..."
     Start-Sleep -Seconds 3
+    
+    # Find Word and enable editing if needed
+    $result = Find-WordWindowWithButton
+    $wordWindow = $null
+    $wordApp = $null
+    
+    if ($result) {
+        $wordWindow = $result.Window
+        $wordApp = $result.Application
+        
+        if ($result.Button) {
+            if (-not (Click-EnableEditing -button $result.Button)) {
+                Write-Error "Failed to enable editing"
+                exit 1
+            }
+            Write-Host "Document editing enabled"
+            Start-Sleep -Seconds 2
+        } else {
+            Write-Host "Document already in editing mode"
+        }
+    } else {
+        Write-Error "Could not find or create Word window"
+        exit 1
+    }
+    
+    # # 1. Check manifest file
+    # $manifestExists = Test-ManifestExists
+    # if (-not $manifestExists) {
+    #     Write-Host "Installing manifest and configuring shared folder..."
+    #     # ... (keep existing manifest installation code) ...
+    #     return
+    # }
+
+    # # 2. Launch Word and wait for it to initialize
+    # Write-Host "Launching Word..."
+    # $word = New-Object -ComObject Word.Application
+    # $word.Visible = $true
+    # $doc = $word.Documents.Add()
+    # Start-Sleep -Seconds 3
 
     # 3. Find Word window
     $wordWindow = Find-WordWindow
