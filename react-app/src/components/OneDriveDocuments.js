@@ -14,7 +14,6 @@ class OneDriveDocuments extends React.Component {
 
   componentDidMount() {
     this.loadDocuments();
-    this.checkWordAndAddin();
   }
 
   loadDocuments = async () => {
@@ -28,7 +27,7 @@ class OneDriveDocuments extends React.Component {
     }
   };
 
-  checkWordAndAddin = async () => {
+  checkWordAndAddin = async (documentUrl) => {
     try {
       // Check Word installation
       const wordResponse = await fetch("http://localhost:3001/api/check-word");
@@ -39,76 +38,91 @@ class OneDriveDocuments extends React.Component {
         this.setState({
           status: "Microsoft Word is not installed. Please install Word first.",
         });
-        return;
+        return false;
       }
 
-      // Check Add-in installation
-      const addinResponse = await fetch(
-        "http://localhost:3001/api/check-addin"
-      );
-      const addinData = await addinResponse.json();
-      this.setState({ addinInstalled: addinData.isAddinInstalled });
-
-      if (!addinData.isAddinInstalled) {
-        this.setState({ status: "Installing Word Add-in..." });
-        // Try to install the add-in
-        // const installResponse = await fetch(
-        //   "http://localhost:3001/api/install-addin",
-        //   {
-        //     method: "POST",
-        //   }
-        // );
-        const installResponse = await fetch(
-          "http://localhost:3001/api/setup-office-addin",
-          {
-            method: "POST",
-          }
-        );
-        const installData = await installResponse.json();
-
-        if (installData.success) {
-          this.setState({
-            addinInstalled: true,
-            status: "Add-in installed successfully!",
-          });
-        } else {
-          this.setState({
-            status:
-              "Failed to install Add-in. Please try again or contact support.",
-          });
+      // First open the document and then check/setup add-in
+      const openResponse = await fetch(
+        "http://localhost:3001/api/setup-office-addin",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ documentUrl }),
         }
+      );
+
+      if (!openResponse.ok) {
+        this.setState({ status: "Failed to open document" });
+        return false;
       }
+
+      // // Check Add-in installation on the opened document
+      // const addinResponse = await fetch(
+      //   "http://localhost:3001/api/check-addin"
+      // );
+      // const addinData = await addinResponse.json();
+      // this.setState({ addinInstalled: addinData.isAddinInstalled });
+
+      // if (!addinData.isAddinInstalled) {
+      //   this.setState({ status: "Setting up Word Add-in..." });
+      //   // Setup add-in on the opened document
+      //   const setupResponse = await fetch(
+      //     "http://localhost:3001/api/setup-office-addin",
+      //     {
+      //       method: "POST",
+      //       headers: {
+      //         "Content-Type": "application/json",
+      //       },
+      //       body: JSON.stringify({ documentUrl }),
+      //     }
+      //   );
+      //   const setupData = await setupResponse.json();
+
+      //   if (setupData.success) {
+      //     this.setState({
+      //       addinInstalled: true,
+      //       status: "Add-in setup successfully!",
+      //     });
+      //     return true;
+      //   } else {
+      //     this.setState({
+      //       status:
+      //         "Failed to setup Add-in. Please try again or contact support.",
+      //     });
+      //     return false;
+      //   }
+      // }
+      return true;
     } catch (error) {
       console.error("Error checking Word and Add-in:", error);
       this.setState({ status: "Error checking Word and Add-in installation" });
+      return false;
     }
   };
 
   openDocument = async (doc) => {
     try {
-      if (!this.state.wordInstalled) {
-        this.setState({ status: "Please install Microsoft Word first" });
-        return;
-      }
-
-      if (!this.state.addinInstalled) {
-        await this.checkWordAndAddin(); // Try to install add-in
-        if (!this.state.addinInstalled) {
-          this.setState({
-            status: "Please wait while the add-in is being installed",
-          });
-          return;
-        }
-      }
-
-      // Use the document URL from the server
       const baseUrl = doc.url;
 
-      // Create protocol handler URL with add-in parameters
+      // First open the document using protocol handler
       const protocolUrl = `ms-word:ofe|u|${baseUrl}?web=1`;
-
-      // Open Word Desktop
       window.open(protocolUrl);
+
+      // Wait for document to open (give it a few seconds)
+      this.setState({ status: "Opening document..." });
+      // await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Now check Word and setup add-in with the specific document URL
+      const ready = await this.checkWordAndAddin(baseUrl);
+      // if (!ready) {
+      //   return;
+      // }
+
+      this.setState({
+        status: "Document opened successfully with add-in enabled",
+      });
     } catch (error) {
       console.error("Error opening document:", error);
       this.setState({ status: "Error opening document" });
@@ -140,25 +154,8 @@ class OneDriveDocuments extends React.Component {
                 key={doc.id}
                 className="document-item"
                 onClick={() => this.openDocument(doc)}
-                style={{
-                  opacity:
-                    !this.state.wordInstalled || !this.state.addinInstalled
-                      ? 0.5
-                      : 1,
-                  cursor:
-                    !this.state.wordInstalled || !this.state.addinInstalled
-                      ? "not-allowed"
-                      : "pointer",
-                }}
               >
                 <span>{doc.name}</span>
-                {(!this.state.wordInstalled || !this.state.addinInstalled) && (
-                  <span className="installation-required">
-                    {!this.state.wordInstalled
-                      ? "Word Required"
-                      : "Installing Add-in..."}
-                  </span>
-                )}
               </div>
             ))}
           </div>

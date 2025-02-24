@@ -213,7 +213,7 @@ app.post("/api/setup-office-addin", async (req, res) => {
 
     // Run PowerShell script with elevated privileges
     sudo.exec(
-      `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "${scriptPath}"`,
+      `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "${scriptPath}" -documentUrl "${req.body.documentUrl}"`,
       options,
       (error, stdout, stderr) => {
         if (error) {
@@ -227,28 +227,9 @@ app.post("/api/setup-office-addin", async (req, res) => {
           return;
         }
 
-        // Check if the share was created successfully
-        const sharePath = `\\\\${require("os").hostname()}\\OfficeAddins`;
-        if (!fs.existsSync(sharePath)) {
-          res.status(500).json({
-            error: "Share creation failed",
-            details: "The network share was not created successfully",
-          });
-          return;
-        }
-
         res.json({
           success: true,
           message: "Office Add-in setup completed successfully",
-          nextSteps: [
-            "1. Start Microsoft Word",
-            "2. Click File > Options > Trust Center > Trust Center Settings",
-            "3. Click Trusted Add-in Catalogs",
-            "4. Verify that the shared folder is listed",
-            "5. Check 'Show in Menu'",
-            "6. Click OK and restart Word",
-          ],
-          sharePath: sharePath,
           output: stdout,
         });
       }
