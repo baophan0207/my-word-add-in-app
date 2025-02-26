@@ -1,4 +1,4 @@
-/* global Word console, Office, document */
+/* global Word console, Office, fetch */
 
 export async function insertText(text) {
   // Write text to the document.
@@ -14,40 +14,63 @@ export async function insertText(text) {
 }
 
 Office.onReady(() => {
-  // Enable auto-open
-  const enableAutoOpen = async () => {
-    try {
-      // Set the setting to auto-open
-      await Office.context.document.settings.set("Office.AutoShowTaskpaneWithDocument", true);
-      // Save the settings
-      await Office.context.document.settings.saveAsync();
-      console.log("Auto-open enabled successfully");
-    } catch (error) {
-      console.error("Error enabling auto-open:", error);
-    }
-  };
-
-  // Disable auto-open
-  const disableAutoOpen = async () => {
-    try {
-      // Remove the auto-open setting
-      await Office.context.document.settings.set("Office.AutoShowTaskpaneWithDocument", false);
-      // Save the settings
-      await Office.context.document.settings.saveAsync();
-      console.log("Auto-open disabled successfully");
-    } catch (error) {
-      console.error("Error disabling auto-open:", error);
-    }
-  };
-
-  // Check current auto-open status
-  // const checkAutoOpenStatus = () => {
-  //   const isAutoOpen = Office.context.document.settings.get("Office.AutoShowTaskpaneWithDocument");
-  //   console.log("Auto-open status:", isAutoOpen);
-  //   return isAutoOpen;
-  // };
-
-  // Example: Add buttons to control auto-open
-  document.getElementById("enableAutoOpen").onclick = enableAutoOpen;
-  document.getElementById("disableAutoOpen").onclick = disableAutoOpen;
+  // If needed, Office.js is ready to be called.
+  console.log("Office.js is ready");
+  setupDocumentEventHandlers();
 });
+
+/**
+ * Sets up event handlers for document changes and saves
+ */
+function setupDocumentEventHandlers() {
+  // Only proceed if we're in Word
+  if (Office.context.host === Office.HostType.Word) {
+    // Listen for document changes
+    Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onDocumentChanged);
+
+    console.log("Document event handlers registered");
+  }
+}
+
+/**
+ * Handles document content changes
+ * @param {Office.DocumentSelectionChangedEventArgs} eventArgs
+ */
+function onDocumentChanged() {
+  // Get document properties
+  Office.context.document.getFilePropertiesAsync((result) => {
+    if (result.status === Office.AsyncResultStatus.Succeeded) {
+      const docProps = result.value;
+
+      // Send update to server
+      sendDocumentUpdate({
+        timestamp: new Date().toISOString(),
+        documentName: docProps.url || "Untitled",
+        previousLength: 0, // We don't have previous length in this example
+        currentLength: 0, // You could get content length if needed
+        eventType: "change",
+      });
+    }
+  });
+}
+
+/**
+ * Sends document update data to the Node.js server
+ * @param {Object} updateData - Data about the document update
+ */
+function sendDocumentUpdate(updateData) {
+  fetch(`http://localhost:3001/api/document-update`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(updateData),
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      console.log("Update sent successfully:", data);
+    })
+    .catch((error) => {
+      console.error("Error sending update:", error);
+    });
+}

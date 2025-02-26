@@ -1,14 +1,23 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
-const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const util = require("util");
 const sudo = require("sudo-prompt");
-const execAsync = util.promisify(exec);
 const app = express();
-const port = 3001; // Different from your React dev server port
+const port = process.env.REACT_APP_NODE_SERVER_PORT; // Different from your React dev server port
 const Registry = require("winreg");
+const http = require("http");
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+const io = new Server(server, {
+  cors: {
+    origin: `http://${process.env.REACT_APP_HOST}:${process.env.REACT_APP_PORT}`, // Your React app URL
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
@@ -21,6 +30,15 @@ app.use((req, res, next) => {
 
 app.use(cors()); // Enable CORS for all routes
 app.use(express.json()); // Parse JSON bodies
+
+// Socket.io connection handling
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
+});
 
 // Store document updates
 let documentUpdates = [];
@@ -49,26 +67,25 @@ app.get("/api/documents", (req, res) => {
   }
 });
 
-// Endpoint to receive document updates
+// Modified endpoint to receive document updates
 app.post("/api/document-update", (req, res) => {
-  const { timestamp, previousLength, currentLength } = req.body;
+  const { timestamp, documentName, contentLength, eventType } = req.body;
 
   const update = {
     timestamp,
-    previousLength,
-    currentLength,
+    documentName,
+    contentLength,
+    eventType,
     id: Date.now(),
   };
 
   documentUpdates.push(update);
   console.log("Document updated:", update);
 
-  res.json({ message: "Update received", update });
-});
+  // Broadcast the update to all connected clients
+  io.emit("document-update", update);
 
-// Endpoint to get all updates
-app.get("/api/document-updates", (req, res) => {
-  res.json(documentUpdates);
+  res.json({ message: "Update received", update });
 });
 
 // 1. Check if Microsoft Word is installed
@@ -149,6 +166,7 @@ app.post("/api/setup-office-addin", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+// Change from app.listen to server.listen
+server.listen(port, () => {
+  console.log(`Server running at http://${process.env.REACT_APP_HOST}:${port}`);
 });

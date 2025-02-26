@@ -30,6 +30,8 @@
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.2s;
+  position: relative;
+  transition: all 0.3s ease;
 }
 
 .document-item:hover {
@@ -52,4 +54,35 @@
 
 .document-item {
   transition: opacity 0.3s ease;
+}
+
+.document-status {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #666;
+}
+
+.status-changed {
+  background-color: #fff9c4; /* Light yellow */
+  animation: pulse 2s;
+}
+
+.status-saved {
+  background-color: #c8e6c9; /* Light green */
+}
+
+.status-opening {
+  background-color: #e3f2fd; /* Light blue */
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+  }
 }
