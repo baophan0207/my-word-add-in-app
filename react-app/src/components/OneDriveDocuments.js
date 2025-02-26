@@ -33,6 +33,7 @@ class OneDriveDocuments extends React.Component {
       const wordResponse = await fetch("http://localhost:3001/api/check-word");
       const wordData = await wordResponse.json();
       this.setState({ wordInstalled: wordData.isWordInstalled });
+      console.log(this.state.wordInstalled);
 
       if (!wordData.isWordInstalled) {
         this.setState({
@@ -57,43 +58,6 @@ class OneDriveDocuments extends React.Component {
         this.setState({ status: "Failed to open document" });
         return false;
       }
-
-      // // Check Add-in installation on the opened document
-      // const addinResponse = await fetch(
-      //   "http://localhost:3001/api/check-addin"
-      // );
-      // const addinData = await addinResponse.json();
-      // this.setState({ addinInstalled: addinData.isAddinInstalled });
-
-      // if (!addinData.isAddinInstalled) {
-      //   this.setState({ status: "Setting up Word Add-in..." });
-      //   // Setup add-in on the opened document
-      //   const setupResponse = await fetch(
-      //     "http://localhost:3001/api/setup-office-addin",
-      //     {
-      //       method: "POST",
-      //       headers: {
-      //         "Content-Type": "application/json",
-      //       },
-      //       body: JSON.stringify({ documentUrl }),
-      //     }
-      //   );
-      //   const setupData = await setupResponse.json();
-
-      //   if (setupData.success) {
-      //     this.setState({
-      //       addinInstalled: true,
-      //       status: "Add-in setup successfully!",
-      //     });
-      //     return true;
-      //   } else {
-      //     this.setState({
-      //       status:
-      //         "Failed to setup Add-in. Please try again or contact support.",
-      //     });
-      //     return false;
-      //   }
-      // }
       return true;
     } catch (error) {
       console.error("Error checking Word and Add-in:", error);
@@ -106,8 +70,8 @@ class OneDriveDocuments extends React.Component {
     try {
       const baseUrl = doc.url;
 
-      // First open the document using protocol handler
-      const protocolUrl = `ms-word:ofe|u|${baseUrl}?web=1`;
+      // // First open the document using protocol handler
+      const protocolUrl = `ms-word:ofe|u|${baseUrl}`;
       window.open(protocolUrl);
 
       // Wait for document to open (give it a few seconds)
@@ -115,10 +79,7 @@ class OneDriveDocuments extends React.Component {
       // await new Promise((resolve) => setTimeout(resolve, 5000));
 
       // Now check Word and setup add-in with the specific document URL
-      const ready = await this.checkWordAndAddin(baseUrl);
-      // if (!ready) {
-      //   return;
-      // }
+      await this.checkWordAndAddin(baseUrl);
 
       this.setState({
         status: "Document opened successfully with add-in enabled",
