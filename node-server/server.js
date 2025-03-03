@@ -76,7 +76,7 @@ app.get("/api/documents", (req, res) => {
       .map((file) => ({
         id: file,
         name: file,
-        url: `http://localhost:3001/documents/${file}`,
+        url: `http://${process.env.REACT_APP_HOST}:${process.env.REACT_APP_NODE_SERVER_PORT}/documents/${file}`,
       }));
     res.json(files);
   } catch (error) {

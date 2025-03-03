@@ -198,6 +198,8 @@ class OneDriveDocuments extends React.Component {
     try {
       const baseUrl = doc.url;
 
+      console.log("Opening document:", baseUrl);
+
       // Set status to indicate document is being opened
       this.setState({
         status: `Opening document "${doc.name}" with Word Add-in...`,
