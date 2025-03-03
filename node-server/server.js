@@ -49,6 +49,23 @@ app.use("/documents", express.static(path.join(__dirname, "documents")));
 // Serve static files
 app.use(express.static(path.join(__dirname, "public")));
 
+// Create a downloads directory if it doesn't exist
+const downloadsDir = path.join(__dirname, "public", "downloads");
+if (!fs.existsSync(downloadsDir)) {
+  fs.mkdirSync(downloadsDir, { recursive: true });
+}
+
+// Place your WordAddinHandlerSetup.exe in the downloads directory
+// You can copy it during server startup if needed:
+// fs.copyFileSync(path.join(__dirname, '../path/to/installer/WordAddinHandlerSetup.exe'),
+//                 path.join(downloadsDir, 'WordAddinHandlerSetup.exe'));
+
+// Make sure the public directory is served
+app.use(
+  "/downloads",
+  express.static(path.join(__dirname, "public", "downloads"))
+);
+
 // Get list of available documents
 app.get("/api/documents", (req, res) => {
   const documentsPath = path.join(__dirname, "documents");

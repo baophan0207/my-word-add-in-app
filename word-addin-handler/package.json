@@ -1,0 +1,24 @@
+{
+  "name": "word-addin-handler",
+  "version": "1.0.0",
+  "description": "Handler for Word add-in setup",
+  "main": "index.js",
+  "bin": "index.js",
+  "pkg": {
+    "assets": [
+      "scripts/**/*"
+    ],
+    "targets": [
+      "node16-win-x64"
+    ]
+  },
+  "scripts": {
+    "start": "node index.js",
+    "build": "pkg ."
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "sudo-prompt": "^9.2.1"
+  }
+}

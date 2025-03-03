@@ -9,15 +9,20 @@ class OneDriveDocuments extends React.Component {
       documents: [],
       wordInstalled: false,
       addinInstalled: false,
+      addinHandlerInstalled: false,
       status: "",
       activeDocuments: {}, // Stores status for each active document
       socket: null,
+      pendingDocumentUri: null,
+      checkingHandler: false,
+      currentDocument: null,
     };
   }
 
   componentDidMount() {
     this.loadDocuments();
     this.connectSocket();
+    this.checkAddinHandlerInstalled();
   }
 
   componentWillUnmount() {
@@ -108,22 +113,6 @@ class OneDriveDocuments extends React.Component {
         return false;
       }
 
-      // First open the document and then check/setup add-in
-      const openResponse = await fetch(
-        `http://${process.env.REACT_APP_HOST}:${process.env.REACT_APP_NODE_SERVER_PORT}/api/setup-office-addin`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ documentUrl }),
-        }
-      );
-
-      if (!openResponse.ok) {
-        this.setState({ status: "Failed to open document" });
-        return false;
-      }
       return true;
     } catch (error) {
       console.error("Error checking Word and Add-in:", error);
@@ -132,37 +121,246 @@ class OneDriveDocuments extends React.Component {
     }
   };
 
+  checkAddinHandlerInstalled = () => {
+    this.setState({ checkingHandler: true });
+
+    // Create a hidden iframe to test the protocol without navigating away
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+
+    // Track if iframe has been removed to prevent duplicate removal
+    let iframeRemoved = false;
+
+    // Safe removal function
+    const safeRemoveIframe = () => {
+      if (!iframeRemoved && document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+        iframeRemoved = true;
+      }
+    };
+
+    // Set a timeout - if we don't get a blur event, protocol is likely not registered
+    const timer = setTimeout(() => {
+      this.setState({
+        addinHandlerInstalled: false,
+        checkingHandler: false,
+      });
+      safeRemoveIframe();
+    }, 500);
+
+    // If window blurs, it means protocol handler was triggered
+    window.addEventListener(
+      "blur",
+      () => {
+        clearTimeout(timer);
+
+        // When focus returns, we'll know the handler exists
+        window.addEventListener(
+          "focus",
+          () => {
+            this.setState({
+              addinHandlerInstalled: true,
+              checkingHandler: false,
+            });
+            safeRemoveIframe();
+          },
+          { once: true }
+        );
+      },
+      { once: true }
+    );
+
+    // Try to trigger the protocol with a simple ping command
+    try {
+      iframe.contentWindow.location.href = "wordaddin://ping";
+    } catch (e) {
+      // Error handling just in case
+      clearTimeout(timer);
+      this.setState({
+        addinHandlerInstalled: false,
+        checkingHandler: false,
+      });
+      safeRemoveIframe();
+    }
+  };
+
   openDocument = async (doc) => {
+    // Check if handler is installed first
+    if (!this.state.addinHandlerInstalled) {
+      this.setState({
+        status:
+          "Word Add-in Handler is not installed. Please download and install it first.",
+      });
+      return;
+    }
+
     try {
       const baseUrl = doc.url;
 
-      // First open the document using protocol handler
-      const protocolUrl = `ms-word:ofe|u|${baseUrl}`;
-      window.open(protocolUrl);
-
-      this.setState({ status: "Opening document..." });
-
-      // Add this document to active documents with initial state
-      this.setState((prevState) => ({
-        activeDocuments: {
-          ...prevState.activeDocuments,
-          [baseUrl]: {
-            lastUpdate: new Date().toISOString(),
-            status: "opening",
-            contentLength: 0,
-          },
-        },
-      }));
-
-      // Now check Word and setup add-in with the specific document URL
-      await this.checkWordAndAddin(baseUrl);
-
+      // Set status to indicate document is being opened
       this.setState({
-        status: "Document opened successfully with add-in enabled",
+        status: `Opening document "${doc.name}" with Word Add-in...`,
       });
+
+      // First open the document in Word using the ms-word protocol
+      const wordProtocolUrl = `ms-word:ofe|u|${baseUrl}`;
+
+      // Save the current window for focus
+      const currentWindow = window;
+      const currentWindowTitle = document.title;
+
+      // Open Word in a way that we can regain focus
+      const wordWindow = window.open(wordProtocolUrl, "_blank");
+
+      // Force focus back to our application after a short delay
+      setTimeout(() => {
+        // Try to focus back to our window
+        currentWindow.focus();
+
+        // Set a flag to track if we've successfully focused back
+        let focusAttempts = 0;
+        const focusInterval = setInterval(() => {
+          // Try to focus with several techniques
+          currentWindow.focus();
+
+          // Flash the title briefly to get user attention
+          if (focusAttempts % 2 === 0) {
+            document.title = "⚠️ Click here to continue setup ⚠️";
+          } else {
+            document.title = currentWindowTitle;
+          }
+
+          focusAttempts++;
+
+          // After 5 seconds, stop trying and restore title
+          if (focusAttempts > 10) {
+            clearInterval(focusInterval);
+            document.title = currentWindowTitle;
+          }
+        }, 500);
+
+        // Once we're fairly confident we have focus, ask for confirmation
+        setTimeout(() => {
+          clearInterval(focusInterval);
+          document.title = currentWindowTitle;
+
+          // Launch the add-in handler as a result of this user gesture
+          const customUri = `wordaddin://setup?documentUrl=${encodeURIComponent(
+            baseUrl
+          )}`;
+
+          // Ask for confirmation - this creates a user gesture
+          if (
+            window.confirm("Document opened. Configure the Word add-in now?")
+          ) {
+            window.location.href = customUri;
+
+            // Add the document to active documents
+            this.setState((prevState) => ({
+              activeDocuments: {
+                ...prevState.activeDocuments,
+                [baseUrl]: {
+                  lastUpdate: new Date().toISOString(),
+                  status: "opening",
+                  contentLength: 0,
+                },
+              },
+            }));
+
+            // Update status
+            this.setState({
+              status: `Add-in setup initiated for "${doc.name}". Word should be configured shortly.`,
+            });
+
+            // Clear status after a reasonable time
+            setTimeout(() => {
+              this.setState((prevState) => {
+                if (prevState.status.includes("Add-in setup initiated")) {
+                  return { status: "" };
+                }
+                return null;
+              });
+            }, 7000);
+          }
+        }, 1500);
+      }, 1000);
     } catch (error) {
       console.error("Error opening document:", error);
-      this.setState({ status: "Error opening document" });
+      this.setState({
+        status: `Error opening document: ${error.message}`,
+      });
+    }
+  };
+
+  // Method to handle the add-in launch with direct user gesture
+  handleLaunchAddin = () => {
+    const { pendingDocumentUri, currentDocument } = this.state;
+
+    if (pendingDocumentUri) {
+      // This will work because it's directly triggered by a user click
+      window.open(pendingDocumentUri, "_blank");
+
+      this.setState({
+        status: `Add-in setup initiated for "${currentDocument?.name}". Word should be configured shortly.`,
+        pendingDocumentUri: null,
+        currentDocument: null,
+      });
+
+      // Clear status after a reasonable time
+      setTimeout(() => {
+        this.setState((prevState) => {
+          if (prevState.status.includes("Add-in setup initiated")) {
+            return { status: "" };
+          }
+          return null;
+        });
+      }, 7000);
+    }
+  };
+
+  downloadHandlerInstaller = () => {
+    const installerUrl = `http://${process.env.REACT_APP_HOST}:${process.env.REACT_APP_NODE_SERVER_PORT}/downloads/WordAddinHandlerSetup.exe`;
+
+    const a = document.createElement("a");
+    a.href = installerUrl;
+    a.download = "WordAddinHandlerSetup.exe";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    this.setState({
+      status:
+        "Downloading Word Add-in Handler installer. Please run the installer when download completes.",
+    });
+  };
+
+  handleUriLaunch = () => {
+    const { pendingDocumentUri } = this.state;
+
+    if (pendingDocumentUri) {
+      window.location.href = pendingDocumentUri;
+
+      this.setState({
+        pendingDocumentUri: null,
+        status: "Document opening process initiated. Word should open shortly.",
+      });
+
+      const docUrl = new URLSearchParams(pendingDocumentUri.split("?")[1]).get(
+        "documentUrl"
+      );
+      if (docUrl) {
+        this.setState((prevState) => ({
+          activeDocuments: {
+            ...prevState.activeDocuments,
+            [docUrl]: {
+              lastUpdate: new Date().toISOString(),
+              status: "opening",
+              contentLength: 0,
+            },
+          },
+        }));
+      }
     }
   };
 
@@ -183,11 +381,77 @@ class OneDriveDocuments extends React.Component {
     return (
       <div className="documents-list">
         <h2>Your Word Documents</h2>
+
+        {/* Handler Installation Check */}
+        {!this.state.addinHandlerInstalled && !this.state.checkingHandler && (
+          <div
+            className="handler-warning"
+            style={{
+              backgroundColor: "#fff3cd",
+              color: "#856404",
+              padding: "15px",
+              borderRadius: "4px",
+              marginBottom: "20px",
+              border: "1px solid #ffeeba",
+            }}
+          >
+            <h3 style={{ margin: "0 0 10px 0" }}>
+              Word Add-in Handler Not Installed
+            </h3>
+            <p>
+              To open documents with the Word add-in, you need to install the
+              Word Add-in Handler application.
+            </p>
+            <button
+              onClick={this.downloadHandlerInstaller}
+              style={{
+                padding: "8px 16px",
+                backgroundColor: "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontSize: "14px",
+                marginTop: "10px",
+              }}
+            >
+              Download Installer
+            </button>
+            <p style={{ fontSize: "12px", marginTop: "10px" }}>
+              After installation is complete,{" "}
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  this.checkAddinHandlerInstalled();
+                }}
+              >
+                click here
+              </a>{" "}
+              to check again.
+            </p>
+          </div>
+        )}
+
+        {this.state.checkingHandler && (
+          <div
+            style={{
+              padding: "15px",
+              backgroundColor: "#e9ecef",
+              borderRadius: "4px",
+              marginBottom: "20px",
+            }}
+          >
+            Checking if Word Add-in Handler is installed...
+          </div>
+        )}
+
+        {/* Status Message with Add-in Button */}
         {this.state.status && (
           <div
             className="status-message"
             style={{
-              color: this.state.status.includes("success") ? "green" : "red",
+              color: this.state.status.includes("Error") ? "red" : "green",
               marginBottom: "20px",
               padding: "10px",
               backgroundColor: "#f8f8f8",
@@ -195,8 +459,31 @@ class OneDriveDocuments extends React.Component {
             }}
           >
             {this.state.status}
+
+            {/* Show the Add-in setup button only when needed */}
+            {this.state.pendingDocumentUri &&
+              this.state.status.includes("Click the button below") && (
+                <div style={{ marginTop: "15px" }}>
+                  <button
+                    onClick={this.handleLaunchAddin}
+                    style={{
+                      padding: "8px 16px",
+                      backgroundColor: "#4CAF50",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                    }}
+                  >
+                    Set Up Add-in for This Document
+                  </button>
+                </div>
+              )}
           </div>
         )}
+
+        {/* Documents Grid */}
         <div className="document-container">
           <div className="documents-grid">
             {this.state.documents.map((doc) => {

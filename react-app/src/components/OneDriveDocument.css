@@ -1,6 +1,5 @@
 .document-container {
   display: flex;
-  height: 90vh;
   gap: 20px;
   padding: 20px;
 }
