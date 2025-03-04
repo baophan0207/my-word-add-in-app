@@ -19,16 +19,24 @@ const io = new Server(server, {
   },
 });
 
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept"
-  );
-  next();
-});
+// Configure CORS to allow requests from all origins
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow any origin
+      callback(null, true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Accept",
+      "Authorization",
+      "X-Requested-With",
+    ],
+    credentials: true,
+  })
+);
 
-app.use(cors()); // Enable CORS for all routes
 app.use(express.json()); // Parse JSON bodies
 
 // Socket.io connection handling

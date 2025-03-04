@@ -96,36 +96,39 @@ function Install-Addin {
     # This manifest includes an ExtensionPoint for PrimaryCommandSurface so that a Ribbon button is created in Word.
     $manifestContent = @'
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" 
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-    xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" 
-    xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" 
-    xsi:type="TaskPaneApp">
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
   <Id>f85491a7-0cf8-4950-b18c-d85ae9970d61</Id>
   <Version>1.0.0.0</Version>
   <ProviderName>Contoso</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="My Word Add-in"/>
   <Description DefaultValue="A template to get started"/>
-  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
+  <IconUrl DefaultValue="https://10.100.100.71:3002/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://10.100.100.71:3002/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://www.contoso.com/help"/>
   <AppDomains>
-    <AppDomain>https://localhost:3000</AppDomain>
+    <AppDomain>https://10.100.100.71:3002</AppDomain>
   </AppDomains>
-  <!-- For Word, use Host Name "Document" -->
   <Hosts>
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
+    <SourceLocation DefaultValue="https://10.100.100.71:3002/taskpane.html"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
     <Hosts>
       <Host xsi:type="Document">
+        <Runtimes>
+          <Runtime resid="Taskpane.Url" lifetime="long" />
+        </Runtimes>
         <DesktopFormFactor>
-          <!-- Command button definition to appear on the Word Ribbon -->
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
+          </GetStarted>
+          <FunctionFile resid="Commands.Url"/>
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
             <OfficeTab id="TabHome">
               <Group id="MyCustomGroup">
@@ -147,7 +150,7 @@ function Install-Addin {
                     <bt:Image size="80" resid="Icon.80x80"/>
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
-                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <TaskpaneId>Office.AutoShowTaskpaneWithDocument</TaskpaneId>
                     <SourceLocation resid="Taskpane.Url"/>
                   </Action>
                 </Control>
@@ -159,20 +162,24 @@ function Install-Addin {
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://10.100.100.71:3002/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://10.100.100.71:3002/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://10.100.100.71:3002/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://10.100.100.71:3002/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://10.100.100.71:3002/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>
         <bt:String id="CustomGroup.Label" DefaultValue="My Add-in Group"/>
         <bt:String id="MyButton.Label" DefaultValue="Open Add-in"/>
         <bt:String id="MyButton.Title" DefaultValue="My Word Add-in"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="MyButton.Tooltip" DefaultValue="Click to open the task pane for My Word Add-in"/>
+        <bt:String id="GetStarted.Description" DefaultValue="Your sample add-in loaded successfully. Go to the HOME tab and click the 'Show Task Pane' button to get started."/>
+        <bt:String id="MyButton.Tooltip" DefaultValue="Click to open the My Word Add-in taskpane"/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

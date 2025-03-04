@@ -1,4 +1,4 @@
-/* global Word console, Office, fetch */
+/* global Word console, Office, fetch, window */
 
 export async function insertText(text) {
   // Write text to the document.
@@ -46,8 +46,8 @@ function onDocumentChanged() {
       sendDocumentUpdate({
         timestamp: new Date().toISOString(),
         documentName: docProps.url || "Untitled",
-        previousLength: 0, // We don't have previous length in this example
-        currentLength: 0, // You could get content length if needed
+        previousLength: 0,
+        currentLength: 0,
         eventType: "change",
       });
     }
@@ -59,18 +59,31 @@ function onDocumentChanged() {
  * @param {Object} updateData - Data about the document update
  */
 function sendDocumentUpdate(updateData) {
-  fetch(`http://localhost:3001/api/document-update`, {
+  // Use window.ENV or hardcoded values if environment variables are not accessible
+  const host = window.ENV?.REACT_APP_HOST || "localhost";
+  const port = window.ENV?.REACT_APP_NODE_SERVER_PORT || "3001";
+
+  const url = `http://${host}:${port}/api/document-update`;
+  console.log("Sending update to:", url); // Add logging for debugging
+
+  fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
     body: JSON.stringify(updateData),
   })
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
     .then((data) => {
       console.log("Update sent successfully:", data);
     })
     .catch((error) => {
-      console.error("Error sending update:", error);
+      console.error("Error sending update:", error.message);
     });
 }
