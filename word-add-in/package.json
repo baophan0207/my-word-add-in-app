@@ -28,7 +28,14 @@
     "stop": "office-addin-debugging stop manifest.xml",
     "validate": "office-addin-manifest validate manifest.xml",
     "watch": "webpack --mode development --watch",
-    "debug:http": "office-addin-debugging start manifest-http.xml web"
+    "start:linux:http": "npm run start:http & office-addin-debugging start manifest-http.xml web",
+    "start:linux:https": "webpack serve --mode development --config webpack.noinstall.js",
+    "generate-ca-certs": "node scripts/generate-certs.js",
+    "start:ca": "node scripts/start-with-ca.js",
+    "start:with-custom-cert": "webpack serve --mode development --config webpack.noinstall.js",
+    "start:custom-certs": "node scripts/use-custom-certs.js",
+    "generate-ip-cert": "node scripts/generate-ip-cert.js",
+    "dev-ip": "webpack serve --mode development --config webpack.ip.js"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.47.2",
