@@ -10,29 +10,23 @@ const useStyles = makeStyles({
     minHeight: "100vh",
     display: "flex",
     flexDirection: "column",
+    backgroundColor: "#212E33",
+    color: "#D2D2D2",
   },
   statusContainer: {
     padding: "12px",
-    borderRadius: "4px",
     textAlign: "center",
     marginTop: "10px",
     transition: "background-color 0.3s ease",
   },
-  monitoringStatus: {
-    backgroundColor: "#f0f0f0",
-    color: tokens.colorNeutralForeground1,
-    borderLeft: `4px solid ${tokens.colorNeutralStroke1}`,
-  },
   successStatus: {
     backgroundColor: "#ecf8f0",
     color: "#0e6027",
-    borderLeft: "4px solid #13a540",
     fontWeight: tokens.fontWeightSemibold,
   },
   errorStatus: {
     backgroundColor: "#fef0f1",
     color: "#d13438",
-    borderLeft: "4px solid #d13438",
     fontWeight: tokens.fontWeightSemibold,
   },
 });
@@ -46,7 +40,7 @@ const App = (props) => {
   const getStatusStyle = () => {
     if (documentStatus.includes("Error")) {
       return styles.errorStatus;
-    } else if (documentStatus.includes("event sent")) {
+    } else if (documentStatus.includes("Document updated")) {
       return styles.successStatus;
     } else {
       return styles.monitoringStatus;
@@ -87,7 +81,7 @@ const App = (props) => {
         });
 
         if (response.ok) {
-          setDocumentStatus(`✓ Document ${eventType} event sent - ${new Date().toLocaleTimeString()}`);
+          setDocumentStatus(`✓ Document updated - ${new Date().toLocaleTimeString()}`);
           // Reset status message after 3 seconds
           setTimeout(() => setDocumentStatus("Monitoring document..."), 3000);
         } else {
@@ -150,7 +144,6 @@ const App = (props) => {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          flex: 1,
         }}
       >
         <h2
@@ -161,6 +154,7 @@ const App = (props) => {
             paddingLeft: "10px",
             paddingRight: "10px",
             lineHeight: "normal",
+            textAlign: "center",
           }}
         >
           Your document will be saved automatically with better text!

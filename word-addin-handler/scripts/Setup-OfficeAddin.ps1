@@ -553,9 +553,9 @@ function Open-AddInFromRibbon {
     
     Write-Host "Checking for add-in button on ribbon..."
     $buttonNames = @(
-        "Open Add-in",
-        "My Word Add-in",
-        "My Add-in Group"
+        "IP Agent AI",
+        "IP Agent AI",
+        "IP Agent AI Group"
     )
     
     foreach ($name in $buttonNames) {

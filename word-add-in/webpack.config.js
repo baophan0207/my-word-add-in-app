@@ -7,8 +7,8 @@ const webpack = require("webpack");
 // const fs = require("fs");
 // const path = require("path");
 
-const urlDev = "https://localhost:3000/";
-const urlProd = "https://www.contoso.com/"; // CHANGE THIS TO YOUR PRODUCTION DEPLOYMENT LOCATION
+const urlDev = "http://localhost:3002/";
+const urlProd = "https://www.anygenai.com/"; // CHANGE THIS TO YOUR PRODUCTION DEPLOYMENT LOCATION
 
 // async function getHttpsOptions() {
 //   // Check if custom certificates exist

@@ -2,21 +2,21 @@
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
   <Id>f85491a7-0cf8-4950-b18c-d85ae9970d61</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Contoso</ProviderName>
+  <ProviderName>AnyGenAI</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="My Word Add-in"/>
   <Description DefaultValue="A template to get started"/>
-  <IconUrl DefaultValue="https://10.100.100.71:3002/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://10.100.100.71:3002/assets/icon-64.png"/>
-  <SupportUrl DefaultValue="https://www.contoso.com/help"/>
+  <IconUrl DefaultValue="http://10.100.100.71:3002/assets/logo-32.png"/>
+  <HighResolutionIconUrl DefaultValue="http://10.100.100.71:3002/assets/logo-64.png"/>
+  <SupportUrl DefaultValue="http://www.anygenai.com/help"/>
   <AppDomains>
-    <AppDomain>https://10.100.100.71:3002</AppDomain>
+    <AppDomain>http://10.100.100.71:3002</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://10.100.100.71:3002/taskpane.html"/>
+    <SourceLocation DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -65,14 +65,14 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://10.100.100.71:3002/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://10.100.100.71:3002/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://10.100.100.71:3002/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="http://10.100.100.71:3002/assets/logo-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="http://10.100.100.71:3002/assets/logo-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="http://10.100.100.71:3002/assets/logo-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Commands.Url" DefaultValue="https://10.100.100.71:3002/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://10.100.100.71:3002/taskpane.html"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="http://go.microsoft.com/fwlink/?LinkId=276812"/>
+        <bt:Url id="Commands.Url" DefaultValue="http://10.100.100.71:3002/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>

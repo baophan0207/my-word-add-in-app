@@ -2,13 +2,13 @@
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
   <Id>f85491a7-0cf8-4950-b18c-d85ae9970d61</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Contoso</ProviderName>
+  <ProviderName>AnyGenAI</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="My Word Add-in"/>
+  <DisplayName DefaultValue="IP Agent AI"/>
   <Description DefaultValue="A template to get started"/>
-  <IconUrl DefaultValue="http://localhost:3002/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="http://localhost:3002/assets/icon-64.png"/>
-  <SupportUrl DefaultValue="http://www.contoso.com/help"/>
+  <IconUrl DefaultValue="http://localhost:3002/assets/logo-32.png"/>
+  <HighResolutionIconUrl DefaultValue="http://localhost:3002/assets/logo-64.png"/>
+  <SupportUrl DefaultValue="http://www.anygenai.com/help"/>
   <AppDomains>
     <AppDomain>http://localhost:3002</AppDomain>
   </AppDomains>
@@ -65,9 +65,9 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="http://localhost:3002/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="http://localhost:3002/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="http://localhost:3002/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="http://localhost:3002/assets/logo-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="http://localhost:3002/assets/logo-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="http://localhost:3002/assets/logo-80.png"/>
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="http://go.microsoft.com/fwlink/?LinkId=276812"/>
@@ -76,13 +76,13 @@
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>
-        <bt:String id="CustomGroup.Label" DefaultValue="My Add-in Group"/>
-        <bt:String id="MyButton.Label" DefaultValue="Open Add-in"/>
-        <bt:String id="MyButton.Title" DefaultValue="My Word Add-in"/>
+        <bt:String id="CustomGroup.Label" DefaultValue="IP Agent AI Group"/>
+        <bt:String id="MyButton.Label" DefaultValue="IP Agent AI"/>
+        <bt:String id="MyButton.Title" DefaultValue="IP Agent AI"/>
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="GetStarted.Description" DefaultValue="Your sample add-in loaded successfully. Go to the HOME tab and click the 'Show Task Pane' button to get started."/>
-        <bt:String id="MyButton.Tooltip" DefaultValue="Click to open the My Word Add-in taskpane"/>
+        <bt:String id="MyButton.Tooltip" DefaultValue="Click to open the IP Agent AI taskpane"/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>
