@@ -1,3 +1,8 @@
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$documentName
+)
+
 # Script to automate Office Add-in network share setup, manifest creation, and trust configuration
 # Requires elevation
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
@@ -103,17 +108,17 @@ function Install-Addin {
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="My Word Add-in"/>
   <Description DefaultValue="A template to get started"/>
-  <IconUrl DefaultValue="https://10.100.100.71:3002/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://10.100.100.71:3002/assets/icon-64.png"/>
+  <IconUrl DefaultValue="http://10.100.100.71:3002/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="http://10.100.100.71:3002/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://www.contoso.com/help"/>
   <AppDomains>
-    <AppDomain>https://10.100.100.71:3002</AppDomain>
+    <AppDomain>http://10.100.100.71:3002</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://10.100.100.71:3002/taskpane.html"/>
+    <SourceLocation DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -162,14 +167,14 @@ function Install-Addin {
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://10.100.100.71:3002/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://10.100.100.71:3002/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://10.100.100.71:3002/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="http://10.100.100.71:3002/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="http://10.100.100.71:3002/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="http://10.100.100.71:3002/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Commands.Url" DefaultValue="https://10.100.100.71:3002/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://10.100.100.71:3002/taskpane.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="http://10.100.100.71:3002/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>
@@ -285,115 +290,6 @@ function Find-AndClickElement {
 
 # Function to find Word window with a specific document name
 function Find-WordWindowWithDocument {
-    Write-Host "Finding already open Word document window..."
-    $maxAttempts = 15
-    $attempt = 0
-    
-    while ($attempt -lt $maxAttempts) {
-        $attempt++
-        Write-Host "Attempt $attempt of $maxAttempts..."
-        
-        # Get Word processes to verify we're working with actual Word windows
-        $wordProcesses = Get-Process -Name "WINWORD" -ErrorAction SilentlyContinue
-        
-        if ($wordProcesses.Count -eq 0) {
-            Write-Host "No Word processes found, waiting..."
-            Start-Sleep -Seconds 1
-            continue
-        }
-
-        Write-Host "Found $($wordProcesses.Count) Word process(es)"
-        
-        # Get all top-level windows
-        $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-            [System.Windows.Automation.TreeScope]::Children,
-            [System.Windows.Automation.PropertyCondition]::TrueCondition
-        )
-        
-        foreach ($window in $windows) {
-            $windowName = $window.Current.Name
-            $className = $window.Current.ClassName
-            
-            # Skip windows that are clearly not Word (like PowerShell or VSCode windows)
-            if ($windowName -match "\.ps1" -or $windowName -match "PowerShell" -or 
-                $windowName -match "Visual Studio Code") {
-                continue
-            }
-            
-            # Check for proper Word window class and process ID
-            $isWordWindow = $false
-            
-            # Look for Word-specific class names (OpusApp is Word's main window class)
-            if ($className -eq "OpusApp") {
-                $isWordWindow = $true
-            }
-            else {
-                # Try to verify by checking if the window's process is Word
-                try {
-                    # Get process ID from window handle
-                    $hwnd = $window.Current.NativeWindowHandle
-                    if ($hwnd -ne 0) {
-                        $processId = 0
-                        $null = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                        $threadId = [Win32Functions.Win32Api]::GetWindowThreadProcessId($hwnd, [ref]$processId)
-                        
-                        # Check if process ID matches any Word process
-                        if ($wordProcesses.Id -contains $processId) {
-                            $isWordWindow = $true
-                        }
-                    }
-                }
-                catch {
-                    Write-Host "Error getting process ID: $_"
-                }
-            }
-            
-            if ($isWordWindow) {
-                Write-Host "Found Word window: $windowName (Class: $className)"
-                
-                # Extract document name (everything before " - Word" in the window title)
-                $documentName = $null
-                if ($windowName -match "(.+) - Word") {
-                    $documentName = $matches[1]
-                    Write-Host "Document name: $documentName"
-                }
-                
-                # Check if it's in Protected View by looking for the Enable Editing button
-                $enableEditingCondition = New-Object System.Windows.Automation.PropertyCondition(
-                    [System.Windows.Automation.AutomationElement]::NameProperty, 
-                    "Enable Editing"
-                )
-                
-                $enableEditingButton = $window.FindFirst(
-                    [System.Windows.Automation.TreeScope]::Descendants,
-                    $enableEditingCondition
-                )
-                
-                if ($enableEditingButton) {
-                    Write-Host "Document is in Protected View, will enable editing"
-                    return @{
-                        Window = $window
-                        EnableEditingButton = $enableEditingButton
-                        DocumentName = $documentName
-                    }
-                } else {
-                    # This could be the document already in editing mode
-                    Write-Host "Found Word window in editing mode"
-                    return @{
-                        Window = $window
-                        EnableEditingButton = $null
-                        DocumentName = $documentName
-                    }
-                }
-            }
-        }
-        Start-Sleep -Seconds 1
-    }
-    return $null
-}
-
-# Function to find Word window with a specific document name
-function Find-WordWindowWithName {
     param (
         [Parameter(Mandatory=$true)]
         [string]$DocumentName
@@ -446,6 +342,123 @@ function Find-WordWindowWithName {
     }
     
     Write-Host "Could not find document window with name: $DocumentName"
+    return $null
+}
+
+# Function to find Word window with a specific document name
+function Find-WordWindowWithName {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$DocumentName,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$ExactMatchOnly = $false
+    )
+    
+    Write-Host "Looking for Word window with document name: $DocumentName"
+    $maxAttempts = 10
+    $attempt = 0
+    
+    # Clean the document name - remove file extension if present for comparison purposes
+    $cleanDocName = $DocumentName -replace '\.docx?$', ''
+    Write-Host "Cleaned document name for matching: $cleanDocName"
+    
+    while ($attempt -lt $maxAttempts) {
+        $attempt++
+        
+        $wordProcesses = Get-Process -Name "WINWORD" -ErrorAction SilentlyContinue
+        
+        if ($wordProcesses.Count -eq 0) {
+            Write-Host "No Word processes found, waiting... (Attempt $attempt of $maxAttempts)"
+            Start-Sleep -Seconds 1
+            continue
+        }
+        
+        Write-Host "Found $($wordProcesses.Count) Word process(es) - checking windows"
+        
+        $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+            [System.Windows.Automation.TreeScope]::Children,
+            [System.Windows.Automation.PropertyCondition]::TrueCondition
+        )
+        
+        foreach ($window in $windows) {
+            $windowName = $window.Current.Name
+            $className = $window.Current.ClassName
+            
+            # Skip if not a Word window by class name
+            if ($className -ne "OpusApp" -and -not (IsWordProcess -window $window)) {
+                continue
+            }
+            
+            Write-Host "Checking Word window: '$windowName'"
+            
+            # Create a collection of matching patterns based on the document name
+            $doesMatch = $false
+            
+            if ($ExactMatchOnly) {
+                # Exact match mode - only match the precise filename
+                if ($windowName -eq $DocumentName -or $windowName -eq "$DocumentName - Word") {
+                    Write-Host "Found exact match for document"
+                    $doesMatch = $true
+                }
+            }
+            else {
+                # Standard matching with multiple patterns
+                
+                # Pattern 1: Exact document name (with or without extension)
+                if ($windowName -eq $DocumentName -or $windowName -eq "$DocumentName - Word") {
+                    Write-Host "Found exact match for document"
+                    $doesMatch = $true
+                }
+                # Pattern 2: Document name with .doc or .docx extension
+                elseif ($windowName -eq "$cleanDocName.docx - Word" -or 
+                       $windowName -eq "$cleanDocName.doc - Word") {
+                    Write-Host "Found document with extension match"
+                    $doesMatch = $true
+                }
+                # Pattern 3: Document in Protected View or with other status indicators
+                elseif ($windowName -match "^$([regex]::Escape($cleanDocName))(\.docx?)? \[.*\] - Word$") {
+                    Write-Host "Found document with status indicators (Protected View, etc.)"
+                    $doesMatch = $true
+                }
+                # Pattern 4: Document with ReadOnly indicator
+                elseif ($windowName -match "^$([regex]::Escape($cleanDocName))(\.docx?)? \(Read-Only\) - Word$") {
+                    Write-Host "Found document with Read-Only indicator"
+                    $doesMatch = $true
+                }
+                # Pattern 5: Document with Protected View in title
+                elseif ($windowName -match "^$([regex]::Escape($cleanDocName))(\.docx?)?  -  Protected View - Word$") {
+                    Write-Host "Found document in Protected View with specific title format"
+                    $doesMatch = $true
+                }
+                # Pattern 6: Any other Protected View variation
+                elseif ($windowName -match "^$([regex]::Escape($cleanDocName))(\.docx?)?(.*)?Protected View(.*)?- Word$") {
+                    Write-Host "Found document in Protected View (alternative format)"
+                    $doesMatch = $true
+                }
+                # Pattern 7: Document with Read only in title
+                elseif ($windowName -match "^$([regex]::Escape($cleanDocName))(\.docx?)?  -  Read-Only - Word$") {
+                    Write-Host "Found document in Read-Only mode with specific title format"
+                    $doesMatch = $true
+                }
+                # Pattern 8: Any other Read-Only variation
+                elseif ($windowName -match "^$([regex]::Escape($cleanDocName))(\.docx?)?(.*)?Read-Only(.*)?- Word$") {
+                    Write-Host "Found document in Read-Only mode (alternative format)"
+                    $doesMatch = $true
+                }
+            }
+            
+            if ($doesMatch) {
+                Write-Host "Found matching document window: '$windowName'"
+                return $window
+            }
+        }
+        
+        Write-Host "Document window not found on attempt $attempt, waiting..."
+        Start-Sleep -Seconds 1
+    }
+    
+    Write-Host "Could not find Word document with name: $DocumentName after $maxAttempts attempts"
     return $null
 }
 
@@ -932,6 +945,131 @@ function Set-WindowFocus {
     }
 }
 
+# Function to get information about a Word document including Protected View status
+function Get-DocumentInformation {
+    param (
+        [Parameter(Mandatory=$true)]
+        [System.Windows.Automation.AutomationElement]$Window
+    )
+    
+    Write-Host "Getting document information..."
+    
+    # Initialize return object
+    $documentInfo = @{
+        EnableEditingButton = $null
+        IsInProtectedView = $false
+        DocumentTitle = $Window.Current.Name
+    }
+    
+    try {
+        # Look for Protected View bar and Enable Editing button
+        Write-Host "Checking for Protected View status..."
+        
+        # Check window title first for Protected View indicator
+        $windowTitle = $Window.Current.Name
+        Write-Host "Window title: $windowTitle"
+        if ($windowTitle -match "Protected View|PROTECTED VIEW") {
+            Write-Host "Document is in Protected View (detected from title)"
+            $documentInfo.IsInProtectedView = $true
+        }
+        
+        # Check for various Protected View banner text patterns
+        $protectedViewPhrases = @(
+            "PROTECTED VIEW",
+            "Protected View", 
+            "PROTECTED MODE",
+            "Protected Mode",
+            "This file originated"  # Common text in Protected View notification
+        )
+        
+        $isProtectedView = $false
+        foreach ($phrase in $protectedViewPhrases) {
+            $condition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::NameProperty, 
+                $phrase
+            )
+            
+            $element = $Window.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $condition
+            )
+            
+            if ($element) {
+                Write-Host "Document is in Protected View (detected phrase: '$phrase')"
+                $isProtectedView = $true
+                $documentInfo.IsInProtectedView = $true
+                break
+            }
+        }
+        
+        # Look for Enable Editing button as another indicator
+        $buttonNames = @(
+            "Enable Editing",
+            "ENABLE EDITING",
+            "Enable editing"
+        )
+        
+        foreach ($buttonName in $buttonNames) {
+            $buttonCondition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::NameProperty, 
+                $buttonName
+            )
+            
+            $enableEditingButton = $Window.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $buttonCondition
+            )
+            
+            if ($enableEditingButton) {
+                Write-Host "Found Enable Editing button with name: $buttonName"
+                $documentInfo.EnableEditingButton = $enableEditingButton
+                # If we find this button, the document is definitely in Protected View
+                $documentInfo.IsInProtectedView = $true
+                break
+            }
+        }
+        
+        # If we still haven't found the button, look for any button that might be the Enable Editing button
+        if (-not $documentInfo.EnableEditingButton -and ($isProtectedView -or $documentInfo.IsInProtectedView)) {
+            Write-Host "Document appears to be in Protected View, trying to find Enable Editing button by control type..."
+            
+            # Looking for buttons in the document
+            $buttonTypeCondition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::Button
+            )
+            
+            # Find all buttons in the descendant tree
+            $allButtons = $Window.FindAll(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $buttonTypeCondition
+            )
+            
+            # Check each button to see if it might be the Enable Editing button
+            foreach ($button in $allButtons) {
+                $buttonName = $button.Current.Name
+                if ($buttonName -match "enable|editing" -or $buttonName -eq "") {
+                    Write-Host "Found potential Enable Editing button: $buttonName"
+                    $documentInfo.EnableEditingButton = $button
+                    break
+                }
+            }
+        }
+        
+        # Final Protected View status check
+        if ($documentInfo.IsInProtectedView) {
+            Write-Host "Document is confirmed to be in Protected View"
+        } else {
+            Write-Host "Document is not in Protected View"
+        }
+        
+        return $documentInfo
+    } catch {
+        Write-Warning "Error getting document information: $_"
+        return $documentInfo
+    }
+}
+
 # Main script
 try {
     # 1. Check manifest file
@@ -951,75 +1089,68 @@ try {
         }
     }
 
-    # 2. Find already open Word document window
-    Write-Host "Looking for the already opened Word document..."
-    
+    # 2. Find specific Word document window by name
+    Write-Host "Looking for Word document: $documentName..."
+
     # Check we have Word processes running first
     $wordProcesses = Get-Process -Name "WINWORD" -ErrorAction SilentlyContinue
     if ($wordProcesses.Count -eq 0) {
         Write-Warning "No Word processes found. Please ensure Word is running with a document open."
         return
     }
-    
+
     Write-Host "Found $($wordProcesses.Count) Word process(es)"
-    
-    # Find Word windows
-    $wordInfo = Find-WordWindowWithDocument
-    if (-not $wordInfo) {
-        Write-Warning "Could not find any open Word documents"
+
+    # Find the specific Word window with the target document name
+    $wordWindow = Find-WordWindowWithName -DocumentName $documentName
+    if (-not $wordWindow) {
+        Write-Warning "Could not find Word document with name: $documentName"
         return
     }
-    
-    $wordWindow = $wordInfo.Window
-    $documentName = $wordInfo.DocumentName
-    
-    Write-Host "Found document: $documentName"
-    
-    # 3. Set focus to Word window first (before enabling editing)
-    Write-Host "Setting focus to Word window before enabling editing..."
+
+    Write-Host "Found target document: $documentName"
+
+    # Get information about the document including whether it's in Protected View
+    $documentInfo = Get-DocumentInformation -Window $wordWindow
+    $enableEditingButton = $documentInfo.EnableEditingButton
+
+    # 3. Set focus to Word window 
+    Write-Host "Setting focus to Word window..."
     if (-not (Set-WindowFocus -Window $wordWindow)) {
-        Write-Warning "Could not set focus to Word window before enabling editing"
+        Write-Warning "Could not set focus to Word window"
         # Continue anyway as we might still be able to enable editing
     }
-    
+
     Start-Sleep -Seconds 2  # Wait for window to be fully focused
-    
-    # 4. Enable editing if document is in Protected View
-    if ($wordInfo.EnableEditingButton) {
+
+    # 4. Enable editing ONLY if document is in Protected View
+    if ($enableEditingButton) {
         Write-Host "Document is in Protected View, enabling editing..."
-        if (-not (Enable-DocumentEditing -enableEditingButton $wordInfo.EnableEditingButton)) {
+        if (-not (Enable-DocumentEditing -enableEditingButton $enableEditingButton)) {
             Write-Warning "Failed to enable editing on document"
-            # Continue anyway as the document might still be usable
+            return
         }
         Start-Sleep -Seconds 2  # Wait for document to exit Protected View
         
-        # 5. After enabling editing, find the document window again
-        if ($documentName) {
-            Write-Host "Re-locating document after enabling editing: $documentName"
-            # Wait a bit longer to ensure Word has updated the window state
-            Start-Sleep -Seconds 3
-            
-            $updatedWindow = Find-WordWindowWithName -DocumentName $documentName
-            
-            if ($updatedWindow) {
-                Write-Host "Re-located document window after enabling editing"
-                $wordWindow = $updatedWindow
-            } else {
-                Write-Warning "Could not re-locate document window by name after enabling editing"
-                
-                # As a fallback, try to find any Word window
-                Write-Host "Trying to find any Word window as fallback..."
-                $fallbackInfo = Find-WordWindowWithDocument
-                if ($fallbackInfo) {
-                    Write-Host "Found fallback Word window: $($fallbackInfo.DocumentName)"
-                    $wordWindow = $fallbackInfo.Window
-                } else {
-                    Write-Warning "Could not find any Word window after enabling editing, using original window"
-                }
-            }
+        # 5. After enabling editing, verify the document window again
+        Write-Host "Re-locating document after enabling editing: $documentName"
+        # Wait a bit longer to ensure Word has updated the window state
+        Start-Sleep -Seconds 3
+        
+        $updatedWindow = Find-WordWindowWithName -DocumentName $documentName
+        
+        if ($updatedWindow) {
+            Write-Host "Successfully enabled editing for document: $documentName"
+            $wordWindow = $updatedWindow
+        } else {
+            Write-Warning "Could not re-locate document window after enabling editing"
+            return
         }
+    } else {
+        Write-Host "Document is not in Protected View, no need to enable editing"
     }
-    
+
+    # Continue with the rest of your add-in setup code...
     # 6. Ensure the Word window has focus before proceeding
     Write-Host "Setting final focus to Word window before proceeding..."
     if (-not (Set-WindowFocus -Window $wordWindow)) {

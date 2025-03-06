@@ -35,7 +35,10 @@
     "start:with-custom-cert": "webpack serve --mode development --config webpack.noinstall.js",
     "start:custom-certs": "node scripts/use-custom-certs.js",
     "generate-ip-cert": "node scripts/generate-ip-cert.js",
-    "dev-ip": "webpack serve --mode development --config webpack.ip.js"
+    "dev-ip": "webpack serve --mode development --config webpack.ip.js",
+    "start:ip": "node scripts/start-with-ip.js",
+    "create-ip-manifest": "node scripts/create-ip-manifest.js",
+    "validate-ip-config": "node scripts/validate-ip-config.js"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.47.2",

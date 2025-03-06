@@ -1,8 +1,5 @@
-const { execFile } = require("child_process");
-const url = require("url");
 const path = require("path");
 const fs = require("fs");
-const { spawn } = require("child_process");
 const sudo = require("sudo-prompt");
 
 // Log startup and arguments
@@ -30,12 +27,12 @@ try {
   }
 
   // Get document URL parameter
-  const documentUrl = parsedUrl.searchParams.get("documentUrl");
-  if (!documentUrl) {
+  const documentName = parsedUrl.searchParams.get("documentName");
+  if (!documentName) {
     throw new Error("No document URL specified");
   }
 
-  fs.appendFileSync(logFile, `Document URL: ${documentUrl}\n`, "utf8");
+  fs.appendFileSync(logFile, `Document Name: ${documentName}\n`, "utf8");
 
   // Get the directory where the EXE is installed
   const exePath = process.argv[0];
@@ -81,12 +78,12 @@ try {
 
   fs.appendFileSync(
     logFile,
-    `Executing script for document: ${documentUrl}\n`,
+    `Executing script for document: ${documentName}\n`,
     "utf8"
   );
 
   // Create the full command string
-  const fullCommand = `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "${scriptPath}" -documentUrl "${documentUrl}"`;
+  const fullCommand = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -documentName "${documentName}"`;
 
   fs.appendFileSync(logFile, `Command: ${fullCommand}\n`, "utf8");
 

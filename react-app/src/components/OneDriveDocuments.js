@@ -213,7 +213,7 @@ class OneDriveDocuments extends React.Component {
       const currentWindowTitle = document.title;
 
       // Open Word in a way that we can regain focus
-      const wordWindow = window.open(wordProtocolUrl, "_blank");
+      window.open(wordProtocolUrl, "_blank");
 
       // Force focus back to our application after a short delay
       setTimeout(() => {
@@ -248,9 +248,7 @@ class OneDriveDocuments extends React.Component {
           document.title = currentWindowTitle;
 
           // Launch the add-in handler as a result of this user gesture
-          const customUri = `wordaddin://setup?documentUrl=${encodeURIComponent(
-            baseUrl
-          )}`;
+          const customUri = `wordaddin://setup?documentName=${doc.name}`;
 
           // Ask for confirmation - this creates a user gesture
           if (
@@ -322,7 +320,7 @@ class OneDriveDocuments extends React.Component {
   };
 
   downloadHandlerInstaller = () => {
-    const installerUrl = `http://${process.env.REACT_APP_HOST}:${process.env.REACT_APP_NODE_SERVER_PORT}/downloads/WordAddinHandlerSetup.exe`;
+    const installerUrl = `http://${process.env.REACT_APP_HOST}:${process.env.REACT_APP_NODE_SERVER_PORT}/downloads/WordAddinHandlerSetupProduction.exe`;
 
     const a = document.createElement("a");
     a.href = installerUrl;
