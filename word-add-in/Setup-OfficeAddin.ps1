@@ -655,27 +655,31 @@ function Open-SharedFolderDialog {
     }
     Start-Sleep -Seconds 2  # Wait for tab content to load
 
-    # After clicking SHARED FOLDER tab and waiting for content to load
-    Start-Sleep -Seconds 2
+    # Function to try finding the add-in with multiple attempts
+    function Find-AddInInDialog {
+        param($dialog)
+        
+        Write-Host "Looking for My Word Add-in in the dialog..."
+        
+        # Try multiple approaches to find the add-in element
+        $addInFound = $false
+        
+        # Approach 1: Direct name search
+        $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 
+            "My Word Add-in"
+        )
+        
+        $addInElement = $dialog.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            $nameCondition
+        )
+        
+        if ($addInElement) {
+            return $addInElement
+        }
 
-    Write-Host "Looking for My Word Add-in in the dialog..."
-    
-    # Try multiple approaches to find the add-in element
-    $addInFound = $false
-    
-    # Approach 1: Direct name search
-    $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::NameProperty, 
-        "My Word Add-in"
-    )
-    
-    $addInElement = $addinDialog.FindFirst(
-        [System.Windows.Automation.TreeScope]::Descendants,
-        $nameCondition
-    )
-
-    # Approach 2: Look for list item containing both "My Word Add-in" and "Contoso"
-    if (-not $addInElement) {
+        # Approach 2: Look for list item containing My Word Add-in
         Write-Host "Trying to find add-in by list item..."
         
         # Find all list items
@@ -684,7 +688,7 @@ function Open-SharedFolderDialog {
             [System.Windows.Automation.ControlType]::ListItem
         )
         
-        $listItems = $addinDialog.FindAll(
+        $listItems = $dialog.FindAll(
             [System.Windows.Automation.TreeScope]::Descendants,
             $listItemCondition
         )
@@ -694,189 +698,266 @@ function Open-SharedFolderDialog {
             if ($item.Current.Name -match "My Word Add-in") {
                 $targetItem = $item
                 Write-Host "Found target list item: $($item.Current.Name)"
-                break
+                return $targetItem
             }
         }
-
-        if ($targetItem) {
-            Write-Host "Found target item, attempting to select..."
+        
+        # No add-in found with either approach
+        return $null
+    }
+    
+    # First attempt to find the add-in
+    $targetItem = Find-AddInInDialog -dialog $addinDialog
+    
+    # If add-in not found, try refreshing
+    $refreshAttempts = 0
+    $maxRefreshAttempts = 3
+    
+    while (-not $targetItem -and $refreshAttempts -lt $maxRefreshAttempts) {
+        $refreshAttempts++
+        Write-Host "Add-in not found, attempting to refresh dialog (Attempt $refreshAttempts of $maxRefreshAttempts)..."
+        
+        # Look for Refresh button
+        $refreshButtonCondition = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 
+            "Refresh"
+        )
+        
+        $refreshButton = $addinDialog.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            $refreshButtonCondition
+        )
+        
+        if ($refreshButton) {
+            Write-Host "Found Refresh button, clicking..."
             try {
-                # Try to find the list container first
-                $listCondition = New-Object System.Windows.Automation.PropertyCondition(
-                    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-                    [System.Windows.Automation.ControlType]::List
-                )
-                
-                $listContainer = $addinDialog.FindFirst(
-                    [System.Windows.Automation.TreeScope]::Descendants,
-                    $listCondition
-                )
-
-                if ($listContainer) {
-                    Write-Host "Found list container, attempting to select item..."
-                    
-                    # Try ExpandCollapsePattern if available
-                    try {
-                        $expandPattern = $listContainer.GetCurrentPattern(
-                            [System.Windows.Automation.ExpandCollapsePattern]::Pattern
-                        )
-                        if ($expandPattern) {
-                            $expandPattern.Expand()
-                            Write-Host "Expanded list container"
-                            Start-Sleep -Milliseconds 500
-                        }
-                    } catch {
-                        Write-Host "ExpandCollapsePattern not available or failed: $_"
+                # Try to click using InvokePattern
+                try {
+                    $invokePattern = $refreshButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                    if ($invokePattern) {
+                        $invokePattern.Invoke()
+                        Write-Host "Clicked Refresh button using InvokePattern"
                     }
-
-                    # Get the bounding rectangle of the target item
-                    $boundingRect = $targetItem.Current.BoundingRectangle
-                    
-                    # Calculate click position (center of the item)
-                    $clickX = $boundingRect.X + ($boundingRect.Width / 2)
-                    $clickY = $boundingRect.Y + ($boundingRect.Height / 2)
-                    
-                    # Move mouse and click
-                    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
-                        [int]$clickX, 
-                        [int]$clickY
-                    )
+                } catch {
+                    Write-Host "InvokePattern not available, trying coordinate click"
+                    $point = $refreshButton.GetClickablePoint()
+                    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$point.X, [int]$point.Y)
                     Start-Sleep -Milliseconds 200
                     
                     # Check if type already exists before adding it
-                    if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEventNew').Type) {
+                    if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEventRefresh').Type) {
                         $signature = @'
                         [DllImport("user32.dll", CharSet=CharSet.Auto, CallingConvention=CallingConvention.StdCall)]
                         public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
 '@
-                        Add-Type -MemberDefinition $signature -Name "Win32MouseEventNew" -Namespace Win32Functions
+                        Add-Type -MemberDefinition $signature -Name "Win32MouseEventRefresh" -Namespace Win32Functions
                     }
                     
-                    # Get the type and create mouse click
-                    $SendMouseClick = [Win32Functions.Win32MouseEventNew]
-                    
-                    # Mouse click down
-                    $SendMouseClick::mouse_event(0x00000002, 0, 0, 0, 0)
+                    # Mouse click down and up
+                    [Win32Functions.Win32MouseEventRefresh]::mouse_event(0x00000002, 0, 0, 0, 0)
                     Start-Sleep -Milliseconds 100
-                    # Mouse click up
-                    $SendMouseClick::mouse_event(0x00000004, 0, 0, 0, 0)
+                    [Win32Functions.Win32MouseEventRefresh]::mouse_event(0x00000004, 0, 0, 0, 0)
                     
-                    Write-Host "Clicked on add-in using calculated center position"
-                    Start-Sleep -Milliseconds 500
-
-                    # Now find and click the Add button
-                    Write-Host "Looking for Add button..."
-                    $addButtonCondition = New-Object System.Windows.Automation.PropertyCondition(
-                        [System.Windows.Automation.AutomationElement]::NameProperty, 
-                        "Add"
-                    )
-                    $addButton = $addinDialog.FindFirst(
-                        [System.Windows.Automation.TreeScope]::Descendants,
-                        $addButtonCondition
-                    )
-
-                    if ($addButton) {
-                        Write-Host "Found Add button, attempting to click..."
-                        try {
-                            $invokePattern = $addButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-                            if ($invokePattern) {
-                                $invokePattern.Invoke()
-                                Write-Host "Clicked Add button using InvokePattern"
-                                Start-Sleep -Seconds 5
-                                
-                                # Wait and try to find the ribbon button
-                                Write-Host "Waiting for add-in button to appear on ribbon..."
-                                $maxAttempts = 20
-                                $attempt = 0
-                                $buttonFound = $false
-
-                                while ($attempt -lt $maxAttempts -and -not $buttonFound) {
-                                    $attempt++
-                                    Write-Host "Attempt $attempt of $maxAttempts to find ribbon button..."
-
-                                    # Try different possible button names
-                                    $buttonNames = @(
-                                        "Open Add-in",
-                                        "My Word Add-in",
-                                        "My Add-in Group"
-                                    )
-
-                                    foreach ($name in $buttonNames) {
-                                        $buttonCondition = New-Object System.Windows.Automation.PropertyCondition(
-                                            [System.Windows.Automation.AutomationElement]::NameProperty, 
-                                            $name
-                                        )
-                                        
-                                        $ribbonButton = $wordWindow.FindFirst(
-                                            [System.Windows.Automation.TreeScope]::Descendants,
-                                            $buttonCondition
-                                        )
-
-                                        if ($ribbonButton) {
-                                            Write-Host "Found ribbon button: $name"
-                                            Start-Sleep -Seconds 2
-                                            try {
-                                                $invokePattern = $ribbonButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-                                                if ($invokePattern) {
-                                                    $invokePattern.Invoke()
-                                                    Write-Host "Clicked ribbon button using InvokePattern"
-                                                    $buttonFound = $true
-                                                    break
-                                                }
-                                            } catch {
-                                                Write-Host "InvokePattern not available, trying coordinate click"
-                                                $point = $ribbonButton.GetClickablePoint()
-                                                [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
-                                                    [int]$point.X, 
-                                                    [int]$point.Y
-                                                )
-                                                Start-Sleep -Milliseconds 500
-                                                $SendMouseClick::mouse_event(0x00000002, 0, 0, 0, 0)
-                                                Start-Sleep -Milliseconds 200
-                                                $SendMouseClick::mouse_event(0x00000004, 0, 0, 0, 0)
-                                                Write-Host "Clicked ribbon button using coordinates"
-                                                $buttonFound = $true
-                                                break
-                                            }
-                                        }
-                                    }
-
-                                    if (-not $buttonFound) {
-                                        Start-Sleep -Seconds 3
-                                    }
-                                }
-
-                                if ($buttonFound) {
-                                    Write-Host "Successfully added and opened add-in"
-                                    Start-Sleep -Seconds 2
-                                    return $true
-                                } else {
-                                    Write-Warning "Add-in installed but couldn't find ribbon button"
-                                    return $false
-                                }
-                            }
-                        } catch {
-                            Write-Warning "Failed to click Add button: $_"
-                            return $false
-                        }
-                    } else {
-                        Write-Warning "Could not find Add button"
-                        return $false
-                    }
-                } else {
-                    Write-Warning "Could not find list container"
-                    return $false
+                    Write-Host "Clicked Refresh button using coordinates"
+                }
+                
+                # Wait for refresh to complete
+                Write-Host "Waiting for refresh to complete..."
+                Start-Sleep -Seconds 3
+                
+                # Try to find the add-in again
+                $targetItem = Find-AddInInDialog -dialog $addinDialog
+                
+                if ($targetItem) {
+                    Write-Host "Add-in found after refreshing!"
+                    break
                 }
             } catch {
-                Write-Warning "Failed to select add-in: $_"
+                Write-Warning "Failed to click Refresh button: $_"
+            }
+        } else {
+            Write-Warning "Could not find Refresh button"
+            break
+        }
+    }
+    
+    # If we still don't have a target item after refresh attempts, return false
+    if (-not $targetItem) {
+        Write-Warning "Could not find My Word Add-in element after $refreshAttempts refresh attempts"
+        return $false
+    }
+
+    # Now we have the target item, proceed with selecting it
+    Write-Host "Found target item, attempting to select..."
+    try {
+        # Try to find the list container first
+        $listCondition = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::List
+        )
+        
+        $listContainer = $addinDialog.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            $listCondition
+        )
+
+        if ($listContainer) {
+            Write-Host "Found list container, attempting to select item..."
+            
+            # Try ExpandCollapsePattern if available
+            try {
+                $expandPattern = $listContainer.GetCurrentPattern(
+                    [System.Windows.Automation.ExpandCollapsePattern]::Pattern
+                )
+                if ($expandPattern) {
+                    $expandPattern.Expand()
+                    Write-Host "Expanded list container"
+                    Start-Sleep -Milliseconds 500
+                }
+            } catch {
+                Write-Host "ExpandCollapsePattern not available or failed: $_"
+            }
+
+            # Get the bounding rectangle of the target item
+            $boundingRect = $targetItem.Current.BoundingRectangle
+            
+            # Calculate click position (center of the item)
+            $clickX = $boundingRect.X + ($boundingRect.Width / 2)
+            $clickY = $boundingRect.Y + ($boundingRect.Height / 2)
+            
+            # Move mouse and click
+            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
+                [int]$clickX, 
+                [int]$clickY
+            )
+            Start-Sleep -Milliseconds 200
+            
+            # Check if type already exists before adding it
+            if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEventNew').Type) {
+                $signature = @'
+                [DllImport("user32.dll", CharSet=CharSet.Auto, CallingConvention=CallingConvention.StdCall)]
+                public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
+'@
+                Add-Type -MemberDefinition $signature -Name "Win32MouseEventNew" -Namespace Win32Functions
+            }
+            
+            # Get the type and create mouse click
+            $SendMouseClick = [Win32Functions.Win32MouseEventNew]
+            
+            # Mouse click down
+            $SendMouseClick::mouse_event(0x00000002, 0, 0, 0, 0)
+            Start-Sleep -Milliseconds 100
+            # Mouse click up
+            $SendMouseClick::mouse_event(0x00000004, 0, 0, 0, 0)
+            
+            Write-Host "Clicked on add-in using calculated center position"
+            Start-Sleep -Milliseconds 500
+
+            # Now find and click the Add button
+            Write-Host "Looking for Add button..."
+            $addButtonCondition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::NameProperty, 
+                "Add"
+            )
+            $addButton = $addinDialog.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $addButtonCondition
+            )
+
+            if ($addButton) {
+                Write-Host "Found Add button, attempting to click..."
+                try {
+                    $invokePattern = $addButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                    if ($invokePattern) {
+                        $invokePattern.Invoke()
+                        Write-Host "Clicked Add button using InvokePattern"
+                        Start-Sleep -Seconds 5
+                        
+                        # Wait and try to find the ribbon button
+                        Write-Host "Waiting for add-in button to appear on ribbon..."
+                        $maxAttempts = 20
+                        $attempt = 0
+                        $buttonFound = $false
+
+                        while ($attempt -lt $maxAttempts -and -not $buttonFound) {
+                            $attempt++
+                            Write-Host "Attempt $attempt of $maxAttempts to find ribbon button..."
+
+                            # Try different possible button names
+                            $buttonNames = @(
+                                "Open Add-in",
+                                "My Word Add-in",
+                                "My Add-in Group"
+                            )
+
+                            foreach ($name in $buttonNames) {
+                                $buttonCondition = New-Object System.Windows.Automation.PropertyCondition(
+                                    [System.Windows.Automation.AutomationElement]::NameProperty, 
+                                    $name
+                                )
+                                
+                                $ribbonButton = $wordWindow.FindFirst(
+                                    [System.Windows.Automation.TreeScope]::Descendants,
+                                    $buttonCondition
+                                )
+
+                                if ($ribbonButton) {
+                                    Write-Host "Found ribbon button: $name"
+                                    Start-Sleep -Seconds 2
+                                    try {
+                                        $invokePattern = $ribbonButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                                        if ($invokePattern) {
+                                            $invokePattern.Invoke()
+                                            Write-Host "Clicked ribbon button using InvokePattern"
+                                            $buttonFound = $true
+                                            break
+                                        }
+                                    } catch {
+                                        Write-Host "InvokePattern not available, trying coordinate click"
+                                        $point = $ribbonButton.GetClickablePoint()
+                                        [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
+                                            [int]$point.X, 
+                                            [int]$point.Y
+                                        )
+                                        Start-Sleep -Milliseconds 500
+                                        $SendMouseClick::mouse_event(0x00000002, 0, 0, 0, 0)
+                                        Start-Sleep -Milliseconds 200
+                                        $SendMouseClick::mouse_event(0x00000004, 0, 0, 0, 0)
+                                        Write-Host "Clicked ribbon button using coordinates"
+                                        $buttonFound = $true
+                                        break
+                                    }
+                                }
+                            }
+
+                            if (-not $buttonFound) {
+                                Start-Sleep -Seconds 3
+                            }
+                        }
+
+                        if ($buttonFound) {
+                            Write-Host "Successfully added and opened add-in"
+                            Start-Sleep -Seconds 2
+                            return $true
+                        } else {
+                            Write-Warning "Add-in installed but couldn't find ribbon button"
+                            return $false
+                        }
+                    }
+                } catch {
+                    Write-Warning "Failed to click Add button: $_"
+                    return $false
+                }
+            } else {
+                Write-Warning "Could not find Add button"
                 return $false
             }
         } else {
-            Write-Warning "Could not find target list item"
+            Write-Warning "Could not find list container"
             return $false
         }
-    } else {
-        Write-Warning "Could not find My Word Add-in element"
+    } catch {
+        Write-Warning "Failed to select add-in: $_"
         return $false
     }
 

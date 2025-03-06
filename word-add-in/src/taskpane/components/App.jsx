@@ -1,17 +1,39 @@
 import * as React from "react";
 import PropTypes from "prop-types";
 import Header from "./Header";
-import HeroList from "./HeroList";
-// import TextInsertion from "./TextInsertion";
-import { makeStyles } from "@fluentui/react-components";
-import { Ribbon24Regular, LockOpen24Regular, DesignIdeas24Regular } from "@fluentui/react-icons";
-// import { insertText } from "../taskpane";
+import { tokens, makeStyles } from "@fluentui/react-components";
 
-/* global Word console, Office, fetch, setTimeout, process */
+/* global Word console, Office, fetch, setTimeout */
 
 const useStyles = makeStyles({
   root: {
     minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+  },
+  statusContainer: {
+    padding: "12px",
+    borderRadius: "4px",
+    textAlign: "center",
+    marginTop: "10px",
+    transition: "background-color 0.3s ease",
+  },
+  monitoringStatus: {
+    backgroundColor: "#f0f0f0",
+    color: tokens.colorNeutralForeground1,
+    borderLeft: `4px solid ${tokens.colorNeutralStroke1}`,
+  },
+  successStatus: {
+    backgroundColor: "#ecf8f0",
+    color: "#0e6027",
+    borderLeft: "4px solid #13a540",
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  errorStatus: {
+    backgroundColor: "#fef0f1",
+    color: "#d13438",
+    borderLeft: "4px solid #d13438",
+    fontWeight: tokens.fontWeightSemibold,
   },
 });
 
@@ -19,22 +41,17 @@ const App = (props) => {
   const { title } = props;
   const styles = useStyles();
   const [documentStatus, setDocumentStatus] = React.useState("Monitoring document...");
-  // The list items are static and won't change at runtime,
-  // so this should be an ordinary const, not a part of state.
-  const listItems = [
-    {
-      icon: <Ribbon24Regular />,
-      primaryText: "Achieve more with Office integration",
-    },
-    {
-      icon: <LockOpen24Regular />,
-      primaryText: "Unlock features and functionality",
-    },
-    {
-      icon: <DesignIdeas24Regular />,
-      primaryText: "Create and visualize like a pro",
-    },
-  ];
+
+  // Function to determine which status style to apply
+  const getStatusStyle = () => {
+    if (documentStatus.includes("Error")) {
+      return styles.errorStatus;
+    } else if (documentStatus.includes("event sent")) {
+      return styles.successStatus;
+    } else {
+      return styles.monitoringStatus;
+    }
+  };
 
   // Function to send document update to the API
   const sendDocumentUpdate = async (eventType) => {
@@ -58,7 +75,7 @@ const App = (props) => {
         };
 
         // API endpoint from your server
-        const apiUrl = `http://${process.env.REACT_APP_HOST || "localhost"}:${process.env.REACT_APP_NODE_SERVER_PORT || "3001"}/api/document-update`;
+        const apiUrl = `http://localhost:3001/api/document-update`;
 
         // Send the update
         const response = await fetch(apiUrl, {
@@ -70,7 +87,7 @@ const App = (props) => {
         });
 
         if (response.ok) {
-          setDocumentStatus(`Document ${eventType} event sent - ${new Date().toLocaleTimeString()}`);
+          setDocumentStatus(`✓ Document ${eventType} event sent - ${new Date().toLocaleTimeString()}`);
           // Reset status message after 3 seconds
           setTimeout(() => setDocumentStatus("Monitoring document..."), 3000);
         } else {
@@ -79,7 +96,7 @@ const App = (props) => {
       });
     } catch (error) {
       console.error("Error sending document update:", error);
-      setDocumentStatus(`Error: ${error.message}`);
+      setDocumentStatus(`⚠️ Error: ${error.message}`);
     }
   };
 
@@ -103,7 +120,7 @@ const App = (props) => {
         setDocumentStatus("Document monitoring active");
       } catch (error) {
         console.error("Error setting up document handlers:", error);
-        setDocumentStatus(`Setup error: ${error.message}`);
+        setDocumentStatus(`⚠️ Setup error: ${error.message}`);
       }
     };
 
@@ -124,20 +141,34 @@ const App = (props) => {
 
   return (
     <div className={styles.root}>
-      <Header logo="assets/logo-filled.png" title={title} message="Welcome" />
-      <HeroList message="Discover what this add-in can do for you today!" items={listItems} />
-      {/* <TextInsertion insertText={insertText} /> */}
+      <Header logo="assets/logo.svg" title={title} message="Welcome" />
 
       <div
         style={{
-          margin: "20px 0",
-          padding: "10px",
-          backgroundColor: "#f5f5f5",
-          borderRadius: "4px",
-          textAlign: "center",
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          flex: 1,
         }}
       >
-        <p>{documentStatus}</p>
+        <h2
+          style={{
+            fontSize: tokens.fontSizeBase500,
+            fontColor: tokens.colorNeutralBackgroundStatic,
+            fontWeight: tokens.fontWeightRegular,
+            paddingLeft: "10px",
+            paddingRight: "10px",
+            lineHeight: "normal",
+          }}
+        >
+          Your document will be saved automatically with better text!
+        </h2>
+      </div>
+
+      <div className={`${styles.statusContainer} ${getStatusStyle()}`}>
+        <p style={{ margin: 0, padding: "4px 0" }}>{documentStatus}</p>
       </div>
     </div>
   );
