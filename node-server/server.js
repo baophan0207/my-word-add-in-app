@@ -18,6 +18,7 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+const multer = require("multer");
 
 // Configure CORS to allow requests from all origins
 app.use(
@@ -190,6 +191,103 @@ app.post("/api/setup-office-addin", async (req, res) => {
     });
   }
 });
+
+// Configure multer for file uploads with limits and proper handling
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const documentsDir = path.join(__dirname, "documents");
+    if (!fs.existsSync(documentsDir)) {
+      fs.mkdirSync(documentsDir, { recursive: true });
+    }
+    cb(null, documentsDir);
+  },
+  filename: function (req, file, cb) {
+    // Generate a temporary filename first to avoid overwriting during upload
+    const tempFilename = `temp_${Date.now()}_${file.originalname}`;
+    cb(null, tempFilename);
+  },
+});
+
+// Configure multer with file size limits and error handling
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB max file size
+  },
+});
+
+// Endpoint to receive document uploads with metadata
+app.post(
+  "/api/upload-document-with-metadata",
+  upload.single("document"),
+  (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Parse the metadata
+      const metadata = req.body.metadata ? JSON.parse(req.body.metadata) : {};
+
+      // Get temporary file path
+      const tempFilePath = req.file.path;
+      // Final filename (without temp prefix)
+      const finalFilename = req.file.originalname || "document.docx";
+      // Final file path
+      const finalFilePath = path.join(
+        path.dirname(tempFilePath),
+        finalFilename
+      );
+
+      // Rename the file to its original name once upload is complete
+      fs.rename(tempFilePath, finalFilePath, (err) => {
+        if (err) {
+          console.error("Error renaming file:", err);
+          return res.status(500).json({
+            error: "Failed to save document",
+            details: err.message,
+          });
+        }
+
+        console.log(`Document uploaded and saved: ${finalFilePath}`);
+        console.log("Document metadata:", metadata);
+
+        // Add the file info to document updates
+        const updateRecord = {
+          ...metadata,
+          id: Date.now(),
+          filePath: finalFilePath,
+          fileName: finalFilename,
+        };
+
+        documentUpdates.push(updateRecord);
+
+        // Broadcast update notification to all connected clients
+        io.emit("document-update", updateRecord);
+
+        res.json({
+          message: "Document and metadata uploaded successfully",
+          fileName: finalFilename,
+          metadata: metadata,
+        });
+      });
+    } catch (error) {
+      console.error("Error saving uploaded document:", error);
+      // Try to clean up temp file if it exists
+      if (req.file && req.file.path) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (cleanupError) {
+          console.error("Error cleaning up temp file:", cleanupError);
+        }
+      }
+      res.status(500).json({
+        error: "Failed to process document",
+        details: error.message,
+      });
+    }
+  }
+);
 
 // Change from app.listen to server.listen
 server.listen(port, () => {

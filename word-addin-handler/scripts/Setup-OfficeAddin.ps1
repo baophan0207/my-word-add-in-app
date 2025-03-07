@@ -104,21 +104,21 @@ function Install-Addin {
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
   <Id>f85491a7-0cf8-4950-b18c-d85ae9970d61</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Contoso</ProviderName>
+  <ProviderName>AnyGenAI</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="My Word Add-in"/>
+  <DisplayName DefaultValue="IP Agent AI"/>
   <Description DefaultValue="A template to get started"/>
-  <IconUrl DefaultValue="http://10.100.100.71:3002/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="http://10.100.100.71:3002/assets/icon-64.png"/>
-  <SupportUrl DefaultValue="https://www.contoso.com/help"/>
+  <IconUrl DefaultValue="http://localhost:3002/assets/logo-32.png"/>
+  <HighResolutionIconUrl DefaultValue="http://localhost:3002/assets/logo-64.png"/>
+  <SupportUrl DefaultValue="http://www.anygenai.com/help"/>
   <AppDomains>
-    <AppDomain>http://10.100.100.71:3002</AppDomain>
+    <AppDomain>http://localhost:3002</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
+    <SourceLocation DefaultValue="http://localhost:3002/taskpane.html"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -167,24 +167,24 @@ function Install-Addin {
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="http://10.100.100.71:3002/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="http://10.100.100.71:3002/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="http://10.100.100.71:3002/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="http://localhost:3002/assets/logo-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="http://localhost:3002/assets/logo-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="http://localhost:3002/assets/logo-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Commands.Url" DefaultValue="http://10.100.100.71:3002/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="http://go.microsoft.com/fwlink/?LinkId=276812"/>
+        <bt:Url id="Commands.Url" DefaultValue="http://localhost:3002/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="http://localhost:3002/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>
-        <bt:String id="CustomGroup.Label" DefaultValue="My Add-in Group"/>
-        <bt:String id="MyButton.Label" DefaultValue="Open Add-in"/>
-        <bt:String id="MyButton.Title" DefaultValue="My Word Add-in"/>
+        <bt:String id="CustomGroup.Label" DefaultValue="IP Agent AI Group"/>
+        <bt:String id="MyButton.Label" DefaultValue="IP Agent AI"/>
+        <bt:String id="MyButton.Title" DefaultValue="IP Agent AI"/>
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="GetStarted.Description" DefaultValue="Your sample add-in loaded successfully. Go to the HOME tab and click the 'Show Task Pane' button to get started."/>
-        <bt:String id="MyButton.Tooltip" DefaultValue="Click to open the My Word Add-in taskpane"/>
+        <bt:String id="MyButton.Tooltip" DefaultValue="Click to open the IP Agent AI taskpane"/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>
@@ -659,7 +659,7 @@ function Open-SharedFolderDialog {
     function Find-AddInInDialog {
         param($dialog)
         
-        Write-Host "Looking for My Word Add-in in the dialog..."
+        Write-Host "Looking for IP Agent AI in the dialog..."
         
         # Try multiple approaches to find the add-in element
         $addInFound = $false
@@ -667,7 +667,7 @@ function Open-SharedFolderDialog {
         # Approach 1: Direct name search
         $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::NameProperty, 
-            "My Word Add-in"
+            "IP Agent AI"
         )
         
         $addInElement = $dialog.FindFirst(
@@ -695,7 +695,7 @@ function Open-SharedFolderDialog {
 
         $targetItem = $null
         foreach ($item in $listItems) {
-            if ($item.Current.Name -match "My Word Add-in") {
+            if ($item.Current.Name -match "IP Agent AI") {
                 $targetItem = $item
                 Write-Host "Found target list item: $($item.Current.Name)"
                 return $targetItem
@@ -783,7 +783,7 @@ function Open-SharedFolderDialog {
     
     # If we still don't have a target item after refresh attempts, return false
     if (-not $targetItem) {
-        Write-Warning "Could not find My Word Add-in element after $refreshAttempts refresh attempts"
+        Write-Warning "Could not find IP Agent AI element after $refreshAttempts refresh attempts"
         return $false
     }
 
@@ -886,8 +886,8 @@ function Open-SharedFolderDialog {
                             # Try different possible button names
                             $buttonNames = @(
                                 "Open Add-in",
-                                "My Word Add-in",
-                                "My Add-in Group"
+                                "IP Agent AI",
+                                "IP Agent AI Group"
                             )
 
                             foreach ($name in $buttonNames) {
@@ -1159,7 +1159,7 @@ try {
         Write-Host "Installing manifest and configuring shared folder..."
 
         # Or with custom parameters
-        $result = Install-Addin -ShareName "WordAddins" -ShareDescription "My Word Add-ins"
+        $result = Install-Addin -ShareName "WordAddins" -ShareDescription "IP Agent AI"
 
         if ($result.Success) {
             Write-Host "Add-in installation succeeded"
