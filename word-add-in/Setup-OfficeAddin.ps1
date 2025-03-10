@@ -108,17 +108,17 @@ function Install-Addin {
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="IP Agent AI"/>
   <Description DefaultValue="A template to get started"/>
-  <IconUrl DefaultValue="http://localhost:3002/assets/logo-32.png"/>
-  <HighResolutionIconUrl DefaultValue="http://localhost:3002/assets/logo-64.png"/>
+  <IconUrl DefaultValue="http://10.100.100.71:3002/assets/logo-32.png"/>
+  <HighResolutionIconUrl DefaultValue="http://10.100.100.71:3002/assets/logo-64.png"/>
   <SupportUrl DefaultValue="http://www.anygenai.com/help"/>
   <AppDomains>
-    <AppDomain>http://localhost:3002</AppDomain>
+    <AppDomain>http://10.100.100.71:3002</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Document"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="http://localhost:3002/taskpane.html"/>
+    <SourceLocation DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -167,14 +167,14 @@ function Install-Addin {
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="http://localhost:3002/assets/logo-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="http://localhost:3002/assets/logo-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="http://localhost:3002/assets/logo-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="http://10.100.100.71:3002/assets/logo-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="http://10.100.100.71:3002/assets/logo-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="http://10.100.100.71:3002/assets/logo-80.png"/>
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="http://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Commands.Url" DefaultValue="http://localhost:3002/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="http://localhost:3002/taskpane.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="http://10.100.100.71:3002/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="http://10.100.100.71:3002/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>
@@ -554,7 +554,6 @@ function Open-AddInFromRibbon {
     Write-Host "Checking for add-in button on ribbon..."
     $buttonNames = @(
         "IP Agent AI",
-        "IP Agent AI",
         "IP Agent AI Group"
     )
     
@@ -573,41 +572,167 @@ function Open-AddInFromRibbon {
 function Open-SharedFolderDialog {
     param ($wordWindow)
     
-    Write-Host "Opening Shared Folder dialog..."
-    
-    # Click File tab
-    $fileTabNames = @("File", "FILE", "File Tab")
-    $found = $false
-    foreach ($name in $fileTabNames) {
-        if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
-            $found = $true
-            break
+    Write-Host "Opening Shared Folder dialog using new UI flow..."
+        
+    # Look for Add-ins button in the ribbon
+    Write-Host "Looking for Add-ins button in ribbon..."
+    $addInsButtonNames = @("Add-ins", "ADD-INS")
+    $addInsButtonFound = $false
+    foreach ($name in $addInsButtonNames) {
+        $buttonCondition = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 
+            $name
+        )
+        
+        $addInsButton = $wordWindow.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            $buttonCondition
+        )
+        
+        if ($addInsButton) {
+            Write-Host "Found Add-ins button: $name"
+            try {
+                $invokePattern = $addInsButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                if ($invokePattern) {
+                    $invokePattern.Invoke()
+                    Write-Host "Clicked Add-ins button using InvokePattern"
+                    $addInsButtonFound = $true
+                    break
+                }
+            } catch {
+                Write-Host "Using coordinate click for Add-ins button"
+                $point = $addInsButton.GetClickablePoint()
+                $yOffset = 10  # Adjust this value as needed (5-15 pixels is typical)
+                [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
+                    [int]$point.X, 
+                    [int]($point.Y + $yOffset)
+                )
+                Start-Sleep -Milliseconds 200
+                
+                # Check if type already exists before adding it
+                if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEventAddins').Type) {
+                    $signature = @'
+                    [DllImport("user32.dll", CharSet=CharSet.Auto, CallingConvention=CallingConvention.StdCall)]
+                    public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
+'@
+                    Add-Type -MemberDefinition $signature -Name "Win32MouseEventAddins" -Namespace Win32Functions
+                }
+                
+                # Mouse click
+                [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000002, 0, 0, 0, 0)
+                Start-Sleep -Milliseconds 100
+                [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000004, 0, 0, 0, 0)
+                
+                Write-Host "Clicked Add-ins button using coordinates with Y-offset of $yOffset pixels"
+                $addInsButtonFound = $true
+                break
+            }
         }
     }
     
-    if (-not $found) {
-        Write-Host "Using Alt+F shortcut for File menu..."
-        [System.Windows.Forms.SendKeys]::SendWait("%F")
-    }
-    Start-Sleep -Seconds 2
-
-    # Click Get Add-ins
-    $getAddinsNames = @("Get Add-ins", "Office Add-ins", "Get Office Add-ins")
-    $found = $false
-    foreach ($name in $getAddinsNames) {
-        if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
-            $found = $true
-            break
+    $newMethodWorked = $false
+    if ($addInsButtonFound) {
+        # Wait for the add-ins dropdown to appear
+        Start-Sleep -Seconds 2
+        
+        # Look for More Add-ins button
+        Write-Host "Looking for More Add-ins button..."
+        $moreAddInsNames = @("More Add-ins", "Get Add-ins", "More")
+        $moreAddInsFound = $false
+        
+        foreach ($name in $moreAddInsNames) {
+            $moreButtonCondition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::NameProperty, 
+                $name
+            )
+            
+            $moreAddInsButton = $wordWindow.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $moreButtonCondition
+            )
+            
+            if ($moreAddInsButton) {
+                Write-Host "Found More Add-ins button: $name"
+                try {
+                    $invokePattern = $moreAddInsButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                    if ($invokePattern) {
+                        $invokePattern.Invoke()
+                        Write-Host "Clicked More Add-ins button using InvokePattern"
+                        $moreAddInsFound = $true
+                        break
+                    }
+                } catch {
+                    Write-Host "Using coordinate click for More Add-ins button"
+                    $point = $moreAddInsButton.GetClickablePoint()
+                    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$point.X, [int]$point.Y)
+                    Start-Sleep -Milliseconds 200
+                    
+                    # Mouse click
+                    [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000002, 0, 0, 0, 0)
+                    Start-Sleep -Milliseconds 100
+                    [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000004, 0, 0, 0, 0)
+                    
+                    Write-Host "Clicked More Add-ins button using coordinates"
+                    $moreAddInsFound = $true
+                    break
+                }
+            }
         }
+        
+        if ($moreAddInsFound) {
+            # Wait for Office Add-ins dialog to open
+            Start-Sleep -Seconds 3
+            $newMethodWorked = $true
+        } else {
+            Write-Warning "Could not find More Add-ins button, trying fallback method..."
+            # Press Escape to close Add-ins menu
+            [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+            Start-Sleep -Seconds 1
+        }
+    } else {
+        Write-Warning "Could not find Add-ins button in ribbon, trying fallback method..."
     }
     
-    if (-not $found) {
-        Write-Warning "Could not find Get Add-ins option"
-        return $false
+    # If the new method didn't work, try the old method (File -> Get Add-ins)
+    if (-not $newMethodWorked) {
+        Write-Host "Trying fallback method (File -> Get Add-ins)..."
+        $fileTabNames = @("File", "FILE", "File Tab")
+        $found = $false
+        foreach ($name in $fileTabNames) {
+            if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
+                $found = $true
+                break
+            }
+        }
+        
+        if (-not $found) {
+            Write-Host "Using Alt+F shortcut for File menu..."
+            [System.Windows.Forms.SendKeys]::SendWait("%F")
+        }
+        Start-Sleep -Seconds 2
+        
+        # Try to find Get Add-ins
+        $getAddinsNames = @("Get Add-ins", "Office Add-ins", "Get Office Add-ins")
+        $addinsFound = $false
+        foreach ($name in $getAddinsNames) {
+            if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
+                $addinsFound = $true
+                break
+            }
+        }
+        
+        if (-not $addinsFound) {
+            Write-Warning "Could not find Get Add-ins option in File menu"
+            # Press Escape to close File menu
+            [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+            return $false
+        }
+        
+        # Wait for dialog to open
+        Start-Sleep -Seconds 3
     }
-    Start-Sleep -Seconds 3  # Wait for dialog to open
 
-    # Find Office Add-ins dialog
+    # From here, continue with the original logic to find the Office Add-ins dialog
     Write-Host "Looking for Office Add-ins dialog..."
     $dialogCondition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty, 
