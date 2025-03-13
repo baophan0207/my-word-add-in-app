@@ -1,18 +1,19 @@
 import React from "react";
 import "./App.css";
-import OneDriveDocuments from "./components/OneDriveDocuments";
+import OneDriveDocuments from "./components/OneDriveDocument/OneDriveDocuments";
+import DocumentEditor from "./components/DocumentEditor/DocumentEditor";
+class App extends React.Component {
+  render() {
+    return (
+      <div className="app">
+        {/* <main className="app-main">
+          <OneDriveDocuments />
+        </main> */}
 
-function App() {
-  return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Document Viewer</h1>
-      </header>
-      <main className="app-main">
-        <OneDriveDocuments />
-      </main>
-    </div>
-  );
+        <DocumentEditor />
+      </div>
+    );
+  }
 }
 
 export default App;

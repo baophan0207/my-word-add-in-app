@@ -173,7 +173,7 @@ class OneDriveDocuments extends React.Component {
 
     // Try to trigger the protocol with a simple ping command
     try {
-      iframe.contentWindow.location.href = "wordaddin://ping";
+      // iframe.contentWindow.location.href = "wordaddin://ping";
     } catch (e) {
       // Error handling just in case
       clearTimeout(timer);
