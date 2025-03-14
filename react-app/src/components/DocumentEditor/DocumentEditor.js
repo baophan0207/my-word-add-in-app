@@ -2,14 +2,8 @@ import * as React from "react";
 import {
   DocumentEditorContainerComponent,
   Toolbar,
-  CustomToolbarItemModel,
 } from "@syncfusion/ej2-react-documenteditor";
 import "./DocumentEditor.css";
-import { createPortal } from "react-dom";
-
-// Import any additional styles you might need
-// import "@syncfusion/ej2-react-dropdowns/styles/material.css";
-// import "@syncfusion/ej2-react-inputs/styles/material.css";
 
 DocumentEditorContainerComponent.Inject(Toolbar);
 
@@ -51,6 +45,9 @@ class DocumentEditor extends React.Component {
     this.applyFontColor = this.applyFontColor.bind(this);
     this.applyHighlightColor = this.applyHighlightColor.bind(this);
     this.closeColorPickers = this.closeColorPickers.bind(this);
+    this.ensureSelection = this.ensureSelection.bind(this);
+    this.debugSelectionState = this.debugSelectionState.bind(this);
+    this.applyColorWithDOMCheck = this.applyColorWithDOMCheck.bind(this);
   }
 
   // Custom toolbar items definition
@@ -680,7 +677,15 @@ class DocumentEditor extends React.Component {
     });
   }
 
-  closeColorPickers() {
+  closeColorPickers(event) {
+    // If this is a mousedown event and it's inside the color picker, don't close
+    if (event && event.target) {
+      const fontColorPicker = document.querySelector(".color-picker-popup");
+      if (fontColorPicker && fontColorPicker.contains(event.target)) {
+        return;
+      }
+    }
+
     this.setState({
       showFontColorPicker: false,
       showHighlightColorPicker: false,
@@ -688,39 +693,70 @@ class DocumentEditor extends React.Component {
   }
 
   applyFontColor(color) {
-    const documentEditor = this.editorRef.current?.documentEditor;
-    if (!documentEditor) return;
-
-    if (color === "none") {
-      documentEditor.selection.characterFormat.fontColor = "empty";
-    } else {
-      documentEditor.selection.characterFormat.fontColor = color;
-    }
-
-    documentEditor.focusIn();
-    this.closeColorPickers();
+    this.applyColorWithDOMCheck("font", color);
   }
 
   applyHighlightColor(color) {
+    this.applyColorWithDOMCheck("highlight", color);
+  }
+
+  applyColorWithDOMCheck(action, color) {
     const documentEditor = this.editorRef.current?.documentEditor;
     if (!documentEditor) return;
 
-    if (color === "none") {
-      documentEditor.selection.characterFormat.highlightColor = "NoColor";
-    } else {
-      // Convert hex color to highlight color name if necessary
-      // Syncfusion uses color names like "Yellow", "Green", etc.
-      const highlightColorName = this.getHighlightColorName(color);
-      documentEditor.selection.characterFormat.highlightColor =
-        highlightColorName;
-    }
+    // Store the selection info before applying
+    const selectionBefore = {
+      text: documentEditor.selection.text,
+      isEmpty: documentEditor.selection.isEmpty,
+    };
 
-    documentEditor.focusIn();
-    this.closeColorPickers();
+    console.log(`Attempting to apply ${action} color:`, color);
+    console.log("Selection before:", selectionBefore);
+
+    try {
+      // Apply the formatting
+      if (action === "font") {
+        const colorValue = color === "none" ? "empty" : color;
+        documentEditor.selection.characterFormat.fontColor = colorValue;
+      } else {
+        const highlightValue =
+          color === "none" ? "NoColor" : this.getHighlightColorName(color);
+        documentEditor.selection.characterFormat.highlightColor =
+          highlightValue;
+      }
+
+      // Check if selection is still valid after applying
+      setTimeout(() => {
+        const selectionAfter = {
+          text: documentEditor.selection.text,
+          isEmpty: documentEditor.selection.isEmpty,
+        };
+        console.log("Selection after:", selectionAfter);
+
+        // If selection is empty after formatting, try reselecting
+        if (selectionAfter.isEmpty && !selectionBefore.isEmpty) {
+          console.log(
+            "Selection lost after applying color, attempting to restore"
+          );
+          documentEditor.selection.selectAll();
+          documentEditor.selection.fireSelectionChanged(true);
+        }
+
+        documentEditor.focusIn();
+
+        // Close the color picker after applying the color
+        this.setState({
+          showFontColorPicker: false,
+          showHighlightColorPicker: false,
+        });
+      }, 50);
+    } catch (error) {
+      console.error(`Error in applyColorWithDOMCheck (${action}):`, error);
+    }
   }
 
   getHighlightColorName(hexColor) {
-    // Map common hex colors to Syncfusion highlight color names
+    // Map hex colors to Syncfusion highlight color names
     const colorMap = {
       "#ffff00": "Yellow",
       "#00ff00": "BrightGreen",
@@ -739,7 +775,61 @@ class DocumentEditor extends React.Component {
       "#000000": "Black",
     };
 
-    return colorMap[hexColor.toLowerCase()] || "Yellow"; // Default to Yellow if color not found
+    // For custom colors not in our map, try to match to the closest color
+    const lowerHex = hexColor.toLowerCase();
+
+    // Direct match
+    if (colorMap[lowerHex]) {
+      return colorMap[lowerHex];
+    }
+
+    // For colors not in our predefined list, use Yellow as default
+    // This is a limitation of Syncfusion - it only supports specific highlight colors
+    console.log("Using default Yellow highlight for custom color:", hexColor);
+    return "Yellow";
+  }
+
+  ensureSelection() {
+    const documentEditor = this.editorRef.current?.documentEditor;
+    if (!documentEditor) return false;
+
+    // If no text is selected, try multiple approaches
+    if (documentEditor.selection && documentEditor.selection.isEmpty) {
+      try {
+        // Method 1: Select current word
+        documentEditor.selection.selectCurrentWord();
+
+        // If still empty, try method 2: Select all
+        if (documentEditor.selection.isEmpty) {
+          console.log("Word selection failed, trying to select all");
+          documentEditor.selection.selectAll();
+        }
+
+        // Log what we got
+        console.log("Selection after ensure:", {
+          text: documentEditor.selection.text,
+          isEmpty: documentEditor.selection.isEmpty,
+        });
+
+        return !documentEditor.selection.isEmpty;
+      } catch (error) {
+        console.error("Selection error:", error);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  debugSelectionState() {
+    const documentEditor = this.editorRef.current?.documentEditor;
+    if (!documentEditor || !documentEditor.selection) return;
+
+    console.log("Selection state:", {
+      isEmpty: documentEditor.selection.isEmpty,
+      text: documentEditor.selection.text,
+      characterFormat: documentEditor.selection.characterFormat,
+    });
   }
 
   render() {
@@ -833,19 +923,17 @@ class DocumentEditor extends React.Component {
             enableToolbar={true}
             toolbarItems={this.customToolbarItems}
             toolbarClick={this.onToolbarClick}
-            showPropertiesPane={false}
             documentChange={(args) => {
               this.setState({ documentModified: true });
             }}
             contentChange={(args) => {
               this.setState({ documentModified: true });
             }}
-            enableLocalStorage={true}
             serviceUrl="https://services.syncfusion.com/vue/production/api/documenteditor/"
           />
         </div>
 
-        {/* Font Color Picker Popup */}
+        {/* Enhanced Font Color Picker Popup */}
         {showFontColorPicker && (
           <div
             className="color-picker-popup"
@@ -856,6 +944,15 @@ class DocumentEditor extends React.Component {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="color-picker-header">
+              <span className="color-picker-title">Text Color</span>
+              <button
+                className="color-picker-close"
+                onClick={this.closeColorPickers}
+              >
+                ×
+              </button>
+            </div>
             <div className="color-palette">
               {colorPalette.map((item) => (
                 <div
@@ -868,14 +965,35 @@ class DocumentEditor extends React.Component {
                       item.color !== "none" ? item.color : "white",
                   }}
                   title={item.label}
-                  onClick={() => this.applyFontColor(item.color)}
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent event bubbling
+                    this.applyFontColor(item.color);
+                  }}
                 />
               ))}
+            </div>
+            {/* Add custom color input */}
+            <div className="custom-color-section">
+              <input
+                type="color"
+                className="custom-color-input"
+                onInput={(e) => this.applyFontColor(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <span>Custom</span>
+            </div>
+            <div className="color-picker-footer">
+              <button
+                className="apply-color-button"
+                onClick={this.closeColorPickers}
+              >
+                Done
+              </button>
             </div>
           </div>
         )}
 
-        {/* Highlight Color Picker Popup */}
+        {/* Enhanced Highlight Color Picker Popup */}
         {showHighlightColorPicker && (
           <div
             className="color-picker-popup"
@@ -886,6 +1004,15 @@ class DocumentEditor extends React.Component {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="color-picker-header">
+              <span className="color-picker-title">Highlight Color</span>
+              <button
+                className="color-picker-close"
+                onClick={this.closeColorPickers}
+              >
+                ×
+              </button>
+            </div>
             <div className="color-palette">
               {colorPalette.map((item) => (
                 <div
@@ -898,9 +1025,30 @@ class DocumentEditor extends React.Component {
                       item.color !== "none" ? item.color : "white",
                   }}
                   title={item.label}
-                  onClick={() => this.applyHighlightColor(item.color)}
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent event bubbling
+                    this.applyHighlightColor(item.color);
+                  }}
                 />
               ))}
+            </div>
+            {/* Add custom color input */}
+            <div className="custom-color-section">
+              <input
+                type="color"
+                className="custom-color-input"
+                onInput={(e) => this.applyHighlightColor(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <span>Custom</span>
+            </div>
+            <div className="color-picker-footer">
+              <button
+                className="apply-color-button"
+                onClick={this.closeColorPickers}
+              >
+                Done
+              </button>
             </div>
           </div>
         )}
