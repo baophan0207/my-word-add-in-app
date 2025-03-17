@@ -211,11 +211,15 @@ class DocumentEditor extends React.Component {
     this.setupEditorEvents();
     this.setupAutoSave();
 
+    // Add resize event listener
+    window.addEventListener("resize", this.handleResize);
+
     // Add event listener to close color pickers when clicking outside
     document.addEventListener("mousedown", this.closeColorPickers);
 
     // We'll initialize custom dropdowns like font family and size after the editor is ready
     setTimeout(() => {
+      this.handleResize();
       this.initializeCustomToolbarItems();
 
       // Set references to the color buttons
@@ -245,11 +249,26 @@ class DocumentEditor extends React.Component {
   }
 
   componentWillUnmount() {
+    // Remove resize event listener
+    window.removeEventListener("resize", this.handleResize);
+
     // Remove the event listener
     document.removeEventListener("mousedown", this.closeColorPickers);
 
     this.cleanupAutoSave();
   }
+
+  handleResize = () => {
+    if (this.editorRef.current && this.editorRef.current.documentEditor) {
+      // Manually trigger a resize operation for the editor
+      this.editorRef.current.resize();
+
+      // For older versions of Syncfusion DocumentEditor
+      if (this.editorRef.current.documentEditor.resize) {
+        this.editorRef.current.documentEditor.resize();
+      }
+    }
+  };
 
   initializeCustomToolbarItems() {
     // This method will initialize any custom dropdown items

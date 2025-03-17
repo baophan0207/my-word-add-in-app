@@ -1,14 +1,19 @@
 .document-editor-container {
   display: flex;
-  height: 100%;
+  height: 100vh; /* Use viewport height for full-height layout */
+  width: 100%;
+  overflow: hidden;
+  position: relative;
   background-color: #f9fbfd;
 }
 
 .document-list-panel {
   width: 250px;
+  height: 100%;
+  overflow-y: auto;
   border-right: 1px solid #e0e0e0;
   padding: 10px;
-  overflow-y: auto;
+  transition: width 0.3s ease;
 }
 
 .document-list {
@@ -49,6 +54,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 
 .button-group {
@@ -246,34 +252,10 @@
   display: none;
 }
 
-.e-de-pane-disable-clr.e-de-ctnr-properties-pane-btn .e-btn {
-  /* display: none; */
-}
-
-/* Toggle button styles */
-/* .e-de-toolbar .e-btn-toggle,
-.e-toolbar .e-btn-toggle {
-  background-color: #e6e6e6;
-  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
-  border-color: #adadad;
-}
-
-.e-de-toolbar .e-active,
-.e-toolbar .e-active {
-  background-color: #e6e6e6;
-  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
-  border-color: #adadad;
-} */
-
 .e-de-toolbar .e-active .e-icons,
 .e-toolbar .e-active .e-icons {
   color: #0078d7;
 }
-
-/* Specific color for toolbar item when active */
-/* .e-toolbar-item.e-active {
-  background-color: red !important;
-} */
 
 .e-toolbar-item.e-tbtn-align.e-active.e-btn-toggle button {
   background-color: #e8eaed !important;
@@ -292,9 +274,38 @@
   border-color: #adadad;
 }
 
-/* .e-de-toolbar .e-active,
-.e-toolbar .e-active {
-  background-color: #e6e6e6;
-  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
-  border-color: #adadad;
-} */
+/* Make Syncfusion document editor responsive */
+#container {
+  width: 100% !important;
+  height: calc(100% - 40px) !important;
+}
+
+/* Responsive layout for smaller screens */
+@media (max-width: 768px) {
+  .document-editor-container {
+    flex-direction: column;
+  }
+
+  .document-list-panel {
+    width: 100%;
+    height: 30vh;
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .editor-panel {
+    height: 70vh;
+  }
+}
+
+/* For very small screens, adjust toolbar layout */
+@media (max-width: 480px) {
+  .e-de-toolbar {
+    flex-wrap: wrap;
+    height: auto !important;
+  }
+
+  .e-toolbar-items {
+    flex-wrap: wrap;
+  }
+}
