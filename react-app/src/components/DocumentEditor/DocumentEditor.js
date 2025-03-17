@@ -2,10 +2,11 @@ import * as React from "react";
 import {
   DocumentEditorContainerComponent,
   Toolbar,
+  OptionsPane,
 } from "@syncfusion/ej2-react-documenteditor";
 import "./DocumentEditor.css";
 
-DocumentEditorContainerComponent.Inject(Toolbar);
+DocumentEditorContainerComponent.Inject(Toolbar, OptionsPane);
 
 class DocumentEditor extends React.Component {
   constructor(props) {
@@ -48,6 +49,8 @@ class DocumentEditor extends React.Component {
     this.ensureSelection = this.ensureSelection.bind(this);
     this.debugSelectionState = this.debugSelectionState.bind(this);
     this.applyColorWithDOMCheck = this.applyColorWithDOMCheck.bind(this);
+    this.updateFormatButtonStates = this.updateFormatButtonStates.bind(this);
+    this.updateButtonToggleState = this.updateButtonToggleState.bind(this);
   }
 
   // Custom toolbar items definition
@@ -219,6 +222,9 @@ class DocumentEditor extends React.Component {
       this.fontColorButtonRef.current = document.getElementById("FontColor");
       this.highlightColorButtonRef.current =
         document.getElementById("HighlightColor");
+
+      // Initialize format button states after editor is ready
+      this.updateFormatButtonStates();
     }, 500);
   }
 
@@ -360,9 +366,119 @@ class DocumentEditor extends React.Component {
         this.setState({ documentModified: true });
       };
 
+      // Add selection change event to update formatting button states
+      this.editorRef.current.documentEditor.selectionChange = () => {
+        // Update toggle button states when selection changes
+        this.updateFormatButtonStates();
+      };
+
       // Get document change status
       const documentStatus = this.editorRef.current.documentEditor;
       console.log("Document status:", documentStatus);
+    }
+  }
+
+  // Add this new method to update format button states
+  updateFormatButtonStates() {
+    if (!this.editorRef.current || !this.editorRef.current.documentEditor)
+      return;
+
+    const documentEditor = this.editorRef.current.documentEditor;
+    const container = this.editorRef.current.element;
+    if (!container) return;
+
+    // Look for toolbar element that contains the buttons
+    const toolbar =
+      container.querySelector(".e-toolbar") ||
+      container.querySelector(".e-de-toolbar");
+    if (!toolbar) return;
+
+    try {
+      // Get current formatting state from the selection
+      const selection = documentEditor.selection;
+      if (!selection || !selection.characterFormat) return;
+
+      const charFormat = selection.characterFormat;
+      const paraFormat = selection.paragraphFormat;
+
+      // Check bold state
+      const isBold = charFormat.bold;
+      const boldButton = toolbar.querySelector('[id$="Bold"], [title="Bold"]');
+      this.updateButtonToggleState(boldButton, isBold);
+
+      // Check italic state
+      const isItalic = charFormat.italic;
+      const italicButton = toolbar.querySelector(
+        '[id$="Italic"], [title="Italic"]'
+      );
+      this.updateButtonToggleState(italicButton, isItalic);
+
+      // Check underline state
+      const isUnderline = charFormat.underline !== "None";
+      const underlineButton = toolbar.querySelector(
+        '[id$="Underline"], [title="Underline"]'
+      );
+      this.updateButtonToggleState(underlineButton, isUnderline);
+
+      // Check alignment states
+      if (paraFormat) {
+        const alignment = paraFormat.textAlignment;
+
+        const leftAlignButton = toolbar.querySelector(
+          '[id$="AlignLeft"], [title="Align Left"]'
+        );
+        this.updateButtonToggleState(leftAlignButton, alignment === "Left");
+
+        const centerAlignButton = toolbar.querySelector(
+          '[id$="AlignCenter"], [title="Align Center"]'
+        );
+        this.updateButtonToggleState(centerAlignButton, alignment === "Center");
+
+        const rightAlignButton = toolbar.querySelector(
+          '[id$="AlignRight"], [title="Align Right"]'
+        );
+        this.updateButtonToggleState(rightAlignButton, alignment === "Right");
+
+        // Check list states
+        const hasBulletList = paraFormat.listType === "Bullet";
+        const bulletListButton = toolbar.querySelector(
+          '[id$="BulletList"], [title="Bullet List"]'
+        );
+        this.updateButtonToggleState(bulletListButton, hasBulletList);
+
+        const hasNumberedList = paraFormat.listType === "Numbered";
+        const numberedListButton = toolbar.querySelector(
+          '[id$="NumberedList"], [title="Numbered List"]'
+        );
+        this.updateButtonToggleState(numberedListButton, hasNumberedList);
+      }
+    } catch (error) {
+      console.log("Error updating format button states:", error);
+    }
+  }
+
+  // Helper method to update button toggle state
+  updateButtonToggleState(button, isActive) {
+    if (!button) return;
+
+    // Add/remove toggle state class
+    if (isActive) {
+      button.classList.add("e-active", "e-btn-toggle");
+    } else {
+      button.classList.remove("e-active", "e-btn-toggle");
+    }
+
+    // Update aria-pressed attribute for accessibility
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+
+    // Update parent container if needed
+    const parent = button.closest(".e-toolbar-item");
+    if (parent) {
+      if (isActive) {
+        parent.classList.add("e-active");
+      } else {
+        parent.classList.remove("e-active");
+      }
     }
   }
 
@@ -596,23 +712,56 @@ class DocumentEditor extends React.Component {
 
     // Process click based on the item ID
     switch (args.item.id) {
+      case "Undo":
+        // After default handler runs, refresh container and update buttons
+        setTimeout(() => {
+          // Safely call refresh with additional checks
+          if (
+            this.editorRef.current &&
+            typeof this.editorRef.current.refresh === "function" &&
+            this.editorRef.current.optionsPaneModule
+          ) {
+            this.editorRef.current.refresh();
+          }
+        }, 100); // Increase timeout to ensure component is ready
+        break;
+      case "Redo":
+        // After default handler runs, refresh container and update buttons
+        setTimeout(() => {
+          // Safely call refresh with additional checks
+          if (
+            this.editorRef.current &&
+            typeof this.editorRef.current.refresh === "function" &&
+            this.editorRef.current.optionsPaneModule
+          ) {
+            this.editorRef.current.refresh();
+          }
+        }, 100); // Increase timeout to ensure component is ready
+        break;
       case "Bold":
         documentEditor.editor.toggleBold();
+        // Update format button states after toggling
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "Italic":
         documentEditor.editor.toggleItalic();
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "Underline":
         documentEditor.editor.toggleUnderline("Single");
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "AlignLeft":
         documentEditor.editor.toggleTextAlignment("Left");
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "AlignCenter":
         documentEditor.editor.toggleTextAlignment("Center");
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "AlignRight":
         documentEditor.editor.toggleTextAlignment("Right");
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "DecreaseIndent":
         documentEditor.editor.decreaseIndent();
@@ -623,10 +772,12 @@ class DocumentEditor extends React.Component {
       case "BulletList":
         // Apply a simple bullet list
         documentEditor.editor.applyBullet("•", "Symbol");
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "NumberedList":
         // Apply numbered list with the default format
         documentEditor.editor.applyNumbering("%1.", "Arabic");
+        setTimeout(() => this.updateFormatButtonStates(), 0);
         break;
       case "HighlightColor":
         // Show highlight color picker instead of applying a fixed color
@@ -923,13 +1074,14 @@ class DocumentEditor extends React.Component {
             enableToolbar={true}
             toolbarItems={this.customToolbarItems}
             toolbarClick={this.onToolbarClick}
-            documentChange={(args) => {
-              this.setState({ documentModified: true });
-            }}
+            showPropertiesPane={false}
+            // documentChange={(args) => {
+            //   this.setState({ documentModified: true });
+            // }}
             contentChange={(args) => {
               this.setState({ documentModified: true });
             }}
-            serviceUrl="https://services.syncfusion.com/vue/production/api/documenteditor/"
+            serviceUrl="https://services.syncfusion.com/js/production/api/documenteditor/"
           />
         </div>
 

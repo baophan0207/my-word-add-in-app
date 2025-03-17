@@ -245,3 +245,56 @@
   .e-tbar-btn-text {
   display: none;
 }
+
+.e-de-pane-disable-clr.e-de-ctnr-properties-pane-btn .e-btn {
+  /* display: none; */
+}
+
+/* Toggle button styles */
+/* .e-de-toolbar .e-btn-toggle,
+.e-toolbar .e-btn-toggle {
+  background-color: #e6e6e6;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+  border-color: #adadad;
+}
+
+.e-de-toolbar .e-active,
+.e-toolbar .e-active {
+  background-color: #e6e6e6;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+  border-color: #adadad;
+} */
+
+.e-de-toolbar .e-active .e-icons,
+.e-toolbar .e-active .e-icons {
+  color: #0078d7;
+}
+
+/* Specific color for toolbar item when active */
+/* .e-toolbar-item.e-active {
+  background-color: red !important;
+} */
+
+.e-toolbar-item.e-tbtn-align.e-active.e-btn-toggle button {
+  background-color: #e8eaed !important;
+}
+
+/* Improve hover effect */
+.e-de-toolbar .e-tbar-btn:hover,
+.e-toolbar .e-tbar-btn:hover {
+  background-color: #f0f0f0;
+  border-color: #d3d3d3;
+}
+.e-de-toolbar .e-btn-toggle,
+.e-toolbar .e-btn-toggle {
+  background-color: transparent !important;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+  border-color: #adadad;
+}
+
+/* .e-de-toolbar .e-active,
+.e-toolbar .e-active {
+  background-color: #e6e6e6;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+  border-color: #adadad;
+} */
