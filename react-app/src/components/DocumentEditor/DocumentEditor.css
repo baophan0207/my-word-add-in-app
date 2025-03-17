@@ -309,3 +309,51 @@
     flex-wrap: wrap;
   }
 }
+
+/* Line Height Picker Styles */
+.line-height-popup {
+  display: block;
+  position: absolute;
+  z-index: 1000;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  width: 200px;
+}
+
+.line-height-popup .line-height-header {
+  border-bottom: 1px solid #eee;
+  padding: 4px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.line-height-popup .line-height-title {
+  font-weight: bold;
+}
+
+.line-height-popup .line-height-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.line-height-popup .line-height-option {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 2px 0;
+}
+
+.line-height-popup .line-height-option:hover {
+  background-color: #f0f0f0;
+}
+
+.e-de-ctnr-properties-pane-btn.e-de-pane-disable-clr {
+  display: none;
+}

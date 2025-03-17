@@ -9,7 +9,6 @@ class App extends React.Component {
         {/* <main className="app-main">
           <OneDriveDocuments />
         </main> */}
-
         <DocumentEditor />
       </div>
     );

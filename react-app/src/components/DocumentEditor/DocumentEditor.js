@@ -5,6 +5,29 @@ import {
   OptionsPane,
 } from "@syncfusion/ej2-react-documenteditor";
 import "./DocumentEditor.css";
+import {
+  undoItem,
+  redoItem,
+  boldItem,
+  italicItem,
+  underlineItem,
+  alignLeftItem,
+  alignCenterItem,
+  alignRightItem,
+  bulletListItem,
+  numberedListItem,
+  decreaseIndentItem,
+  increaseIndentItem,
+  highlightColorItem,
+  fontColorItem,
+  commentItem,
+  trackChangesItem,
+  fontFamilyItem,
+  fontSizeItem,
+  printItem,
+  spellCheckItem,
+  lineHeightItem,
+} from "./CustomToolbarItems";
 
 DocumentEditorContainerComponent.Inject(Toolbar, OptionsPane);
 
@@ -24,6 +47,8 @@ class DocumentEditor extends React.Component {
       showHighlightColorPicker: false,
       fontColorPickerPosition: { top: 0, left: 0 },
       highlightColorPickerPosition: { top: 0, left: 0 },
+      showLineHeightPicker: false,
+      lineHeightPickerPosition: { top: 0, left: 0 },
     };
 
     // Refs
@@ -31,6 +56,7 @@ class DocumentEditor extends React.Component {
     this.autoSaveIntervalRef = null;
     this.fontColorButtonRef = React.createRef();
     this.highlightColorButtonRef = React.createRef();
+    this.lineHeightButtonRef = React.createRef();
 
     // Bind methods to this
     this.loadDocuments = this.loadDocuments.bind(this);
@@ -47,164 +73,16 @@ class DocumentEditor extends React.Component {
     this.applyHighlightColor = this.applyHighlightColor.bind(this);
     this.closeColorPickers = this.closeColorPickers.bind(this);
     this.ensureSelection = this.ensureSelection.bind(this);
-    this.debugSelectionState = this.debugSelectionState.bind(this);
     this.applyColorWithDOMCheck = this.applyColorWithDOMCheck.bind(this);
     this.updateFormatButtonStates = this.updateFormatButtonStates.bind(this);
     this.updateButtonToggleState = this.updateButtonToggleState.bind(this);
+    this.printDocument = this.printDocument.bind(this);
+    this.performSpellCheck = this.performSpellCheck.bind(this);
+    this.toggleLineHeightPicker = this.toggleLineHeightPicker.bind(this);
+    this.applyLineHeight = this.applyLineHeight.bind(this);
   }
 
   // Custom toolbar items definition
-  get customToolbarItems() {
-    // Define custom toolbar items for text formatting
-    const boldItem = {
-      prefixIcon: "e-de-ctnr-bold",
-      tooltipText: "Bold (Ctrl+B)",
-      id: "Bold",
-    };
-
-    const italicItem = {
-      prefixIcon: "e-de-ctnr-italic",
-      tooltipText: "Italic (Ctrl+I)",
-      id: "Italic",
-    };
-
-    const underlineItem = {
-      prefixIcon: "e-de-ctnr-underline",
-      tooltipText: "Underline (Ctrl+U)",
-      id: "Underline",
-    };
-
-    const alignLeftItem = {
-      prefixIcon: "e-de-ctnr-alignleft",
-      tooltipText: "Align Left",
-      id: "AlignLeft",
-    };
-
-    const alignCenterItem = {
-      prefixIcon: "e-de-ctnr-aligncenter",
-      tooltipText: "Align Center",
-      id: "AlignCenter",
-    };
-
-    const alignRightItem = {
-      prefixIcon: "e-de-ctnr-alignright",
-      tooltipText: "Align Right",
-      id: "AlignRight",
-    };
-
-    const bulletListItem = {
-      prefixIcon: "e-de-ctnr-bullets",
-      tooltipText: "Bullet List",
-      id: "BulletList",
-    };
-
-    const numberedListItem = {
-      prefixIcon: "e-de-ctnr-numbering",
-      tooltipText: "Numbered List",
-      id: "NumberedList",
-    };
-
-    const decreaseIndentItem = {
-      prefixIcon: "e-de-ctnr-decreaseindent",
-      tooltipText: "Decrease Indent",
-      id: "DecreaseIndent",
-    };
-
-    const increaseIndentItem = {
-      prefixIcon: "e-de-ctnr-increaseindent",
-      tooltipText: "Increase Indent",
-      id: "IncreaseIndent",
-    };
-
-    const highlightColorItem = {
-      prefixIcon: "e-de-ctnr-highlight",
-      tooltipText: "Highlight Color",
-      id: "HighlightColor",
-      template:
-        '<button id="HighlightColor" class="e-tbar-btn" title="Highlight Color"><span class="e-de-ctnr-highlight e-icons"></span></button>',
-    };
-
-    const fontColorItem = {
-      prefixIcon: "e-de-ctnr-fontcolor",
-      tooltipText: "Font Color",
-      id: "FontColor",
-      template:
-        '<button id="FontColor" class="e-tbar-btn" title="Font Color"><span class="e-de-ctnr-fontcolor e-icons"></span></button>',
-    };
-
-    const commentItem = {
-      prefixIcon: "e-de-cnt-cmt-add",
-      tooltipText: "Add Comment",
-      id: "AddComment",
-    };
-
-    const trackChangesItem = {
-      prefixIcon: "e-de-cnt-track",
-      tooltipText: "Track Changes",
-      id: "TrackChanges",
-    };
-
-    // Define dropdowns as templates (we'll implement these separately using DOM elements)
-    const fontFamilyItem = {
-      id: "FontFamily",
-      tooltipText: "Font Family",
-      template: '<div id="fontFamily" class="custom-dropdown"></div>',
-    };
-
-    const fontSizeItem = {
-      id: "FontSize",
-      tooltipText: "Font Size",
-      template: '<div id="fontSize" class="custom-dropdown"></div>',
-    };
-
-    // Return the array of toolbar items
-    return [
-      // First group: Undo, Redo
-      "Undo",
-      "Redo",
-      // "|",
-
-      // Second group: Font controls
-      fontFamilyItem,
-      fontSizeItem,
-      // "|",
-
-      // Third group: Text formatting
-      boldItem,
-      italicItem,
-      underlineItem,
-      // "|",
-      fontColorItem,
-      highlightColorItem,
-      // "|",
-
-      // Fourth group: Paragraph alignment
-      alignLeftItem,
-      alignCenterItem,
-      alignRightItem,
-      // "|",
-
-      // Fifth group: Lists and indentation
-      bulletListItem,
-      numberedListItem,
-      decreaseIndentItem,
-      increaseIndentItem,
-      // "|",
-
-      // Sixth group: Insert items
-      "Image",
-      "Table",
-      // "|",
-
-      // Seventh group: Collaboration
-      commentItem,
-      trackChangesItem,
-      // "|",
-
-      // Eighth group: Find
-      "Find",
-    ];
-  }
 
   componentDidMount() {
     this.loadDocuments();
@@ -229,6 +107,9 @@ class DocumentEditor extends React.Component {
 
       // Initialize format button states after editor is ready
       this.updateFormatButtonStates();
+
+      // Set reference to the line height button
+      this.lineHeightButtonRef.current = document.getElementById("LineHeight");
     }, 500);
   }
 
@@ -732,30 +613,10 @@ class DocumentEditor extends React.Component {
     // Process click based on the item ID
     switch (args.item.id) {
       case "Undo":
-        // After default handler runs, refresh container and update buttons
-        setTimeout(() => {
-          // Safely call refresh with additional checks
-          if (
-            this.editorRef.current &&
-            typeof this.editorRef.current.refresh === "function" &&
-            this.editorRef.current.optionsPaneModule
-          ) {
-            this.editorRef.current.refresh();
-          }
-        }, 100); // Increase timeout to ensure component is ready
+        documentEditor.editorHistory.undo();
         break;
       case "Redo":
-        // After default handler runs, refresh container and update buttons
-        setTimeout(() => {
-          // Safely call refresh with additional checks
-          if (
-            this.editorRef.current &&
-            typeof this.editorRef.current.refresh === "function" &&
-            this.editorRef.current.optionsPaneModule
-          ) {
-            this.editorRef.current.refresh();
-          }
-        }, 100); // Increase timeout to ensure component is ready
+        documentEditor.editorHistory.redo();
         break;
       case "Bold":
         documentEditor.editor.toggleBold();
@@ -813,6 +674,15 @@ class DocumentEditor extends React.Component {
         documentEditor.enableTrackChanges = !documentEditor.enableTrackChanges;
         // Update button appearance to indicate toggle state
         break;
+      case "Print":
+        this.printDocument();
+        break;
+      case "SpellCheck":
+        this.performSpellCheck();
+        break;
+      case "LineHeight":
+        this.toggleLineHeightPicker();
+        break;
       default:
         // Let the default handler handle other built-in actions
         break;
@@ -847,11 +717,28 @@ class DocumentEditor extends React.Component {
     });
   }
 
+  toggleLineHeightPicker() {
+    if (!this.lineHeightButtonRef.current) return;
+
+    const rect = this.lineHeightButtonRef.current.getBoundingClientRect();
+    this.setState({
+      showLineHeightPicker: !this.state.showLineHeightPicker,
+      showFontColorPicker: false,
+      showHighlightColorPicker: false,
+      lineHeightPickerPosition: {
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+      },
+    });
+  }
+
   closeColorPickers(event) {
-    // If this is a mousedown event and it's inside the color picker, don't close
+    // If this is a mousedown event and it's inside a picker, don't close
     if (event && event.target) {
-      const fontColorPicker = document.querySelector(".color-picker-popup");
-      if (fontColorPicker && fontColorPicker.contains(event.target)) {
+      const anyPicker = document.querySelector(
+        ".color-picker-popup, .line-height-popup"
+      );
+      if (anyPicker && anyPicker.contains(event.target)) {
         return;
       }
     }
@@ -859,6 +746,7 @@ class DocumentEditor extends React.Component {
     this.setState({
       showFontColorPicker: false,
       showHighlightColorPicker: false,
+      showLineHeightPicker: false,
     });
   }
 
@@ -868,6 +756,27 @@ class DocumentEditor extends React.Component {
 
   applyHighlightColor(color) {
     this.applyColorWithDOMCheck("highlight", color);
+  }
+
+  applyLineHeight(value) {
+    const documentEditor = this.editorRef.current?.documentEditor;
+    if (!documentEditor) return;
+
+    try {
+      // Apply the line height to the selected paragraphs
+      documentEditor.selection.paragraphFormat.lineSpacing = parseFloat(value);
+
+      // Focus back on the editor
+      documentEditor.focusIn();
+
+      // Close the picker
+      this.setState({ showLineHeightPicker: false });
+
+      // Update paragraph format in the UI (optional but helpful)
+      setTimeout(() => this.updateFormatButtonStates(), 50);
+    } catch (error) {
+      console.error("Error applying line height:", error);
+    }
   }
 
   applyColorWithDOMCheck(action, color) {
@@ -991,15 +900,56 @@ class DocumentEditor extends React.Component {
     return true;
   }
 
-  debugSelectionState() {
+  // Add this new method to handle document printing
+  printDocument() {
     const documentEditor = this.editorRef.current?.documentEditor;
-    if (!documentEditor || !documentEditor.selection) return;
+    if (!documentEditor) return;
 
-    console.log("Selection state:", {
-      isEmpty: documentEditor.selection.isEmpty,
-      text: documentEditor.selection.text,
-      characterFormat: documentEditor.selection.characterFormat,
-    });
+    try {
+      // Use the built-in print method of the document editor
+      documentEditor.print();
+
+      // Optionally show a status message
+      this.setState({ status: "Preparing document for printing..." });
+      setTimeout(() => this.setState({ status: "" }), 3000);
+    } catch (error) {
+      console.error("Error printing document:", error);
+      this.setState({ status: `Error printing document: ${error.message}` });
+    }
+  }
+
+  // Add this new method to handle spell checking
+  performSpellCheck() {
+    const documentEditor = this.editorRef.current?.documentEditor;
+    if (!documentEditor) return;
+
+    try {
+      // If spell check dialog is already open, return
+      if (documentEditor.spellChecker.dialogs.spellCheckDialog.isOpen) {
+        return;
+      }
+
+      // Show dialog with spell check errors if any
+      documentEditor.spellChecker.checkSpelling();
+
+      // Optionally show a status message
+      this.setState({ status: "Spell checking in progress..." });
+      setTimeout(() => {
+        const hasErrors =
+          documentEditor.spellChecker.errorWordCollection.length > 0;
+        this.setState({
+          status: hasErrors
+            ? "Spell check found errors. Please review them in the dialog."
+            : "Spell check completed. No errors found.",
+        });
+
+        // Clear status after a few seconds
+        setTimeout(() => this.setState({ status: "" }), 3000);
+      }, 500);
+    } catch (error) {
+      console.error("Error performing spell check:", error);
+      this.setState({ status: `Error during spell check: ${error.message}` });
+    }
   }
 
   render() {
@@ -1015,6 +965,8 @@ class DocumentEditor extends React.Component {
       showHighlightColorPicker,
       fontColorPickerPosition,
       highlightColorPickerPosition,
+      showLineHeightPicker,
+      lineHeightPickerPosition,
     } = this.state;
 
     // Common color palette for both pickers
@@ -1035,6 +987,67 @@ class DocumentEditor extends React.Component {
       { color: "#008000", label: "Dark Green" },
       { color: "#008080", label: "Teal" },
       { color: "#000080", label: "Navy" },
+    ];
+
+    // Line height options
+    const lineHeightOptions = [
+      { value: 1, label: "1.0" },
+      { value: 1.15, label: "1.15" },
+      { value: 1.5, label: "1.5" },
+      { value: 2, label: "2.0" },
+      { value: 2.5, label: "2.5" },
+      { value: 3, label: "3.0" },
+    ];
+
+    let items = [
+      // First group: Undo, Redo, Print, SpellCheck
+      undoItem,
+      redoItem,
+      printItem,
+      spellCheckItem,
+      "Separator",
+
+      // Second group: Font controls
+      fontFamilyItem,
+      fontSizeItem,
+      "Separator",
+
+      // Third group: Text formatting
+      boldItem,
+      italicItem,
+      underlineItem,
+      "Separator",
+      fontColorItem,
+      highlightColorItem,
+      "Separator",
+
+      // Fourth group: Paragraph alignment
+      alignLeftItem,
+      alignCenterItem,
+      alignRightItem,
+      lineHeightItem,
+      "Separator",
+
+      // Fifth group: Lists and indentation
+      bulletListItem,
+      numberedListItem,
+      "Separator",
+      decreaseIndentItem,
+      increaseIndentItem,
+      "Separator",
+
+      // Sixth group: Insert items
+      "Image",
+      "Table",
+      "Separator",
+
+      // Seventh group: Collaboration
+      commentItem,
+      trackChangesItem,
+      "Separator",
+
+      // Eighth group: Find and Print
+      "Find",
     ];
 
     return (
@@ -1088,19 +1101,20 @@ class DocumentEditor extends React.Component {
           <DocumentEditorContainerComponent
             ref={this.editorRef}
             id="container"
-            height={"calc(100% - 40px)"}
+            height={"100%"}
             width={"100%"}
             enableToolbar={true}
-            toolbarItems={this.customToolbarItems}
+            toolbarItems={items}
             toolbarClick={this.onToolbarClick}
             showPropertiesPane={false}
-            // documentChange={(args) => {
-            //   this.setState({ documentModified: true });
-            // }}
+            enableSpellCheck={true}
+            documentChange={(args) => {
+              this.setState({ documentModified: true });
+            }}
             contentChange={(args) => {
               this.setState({ documentModified: true });
             }}
-            serviceUrl="https://services.syncfusion.com/js/production/api/documenteditor/"
+            serviceUrl="https://services.syncfusion.com/react/production/api/documenteditor/"
           />
         </div>
 
@@ -1220,6 +1234,74 @@ class DocumentEditor extends React.Component {
               >
                 Done
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Line Height Picker Popup */}
+        {showLineHeightPicker && (
+          <div
+            className="line-height-popup"
+            style={{
+              display: "block",
+              top: lineHeightPickerPosition.top,
+              left: lineHeightPickerPosition.left,
+              position: "absolute",
+              zIndex: 1000,
+              backgroundColor: "white",
+              border: "1px solid #ccc",
+              borderRadius: "4px",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.2)",
+              padding: "8px",
+              width: "200px",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                borderBottom: "1px solid #eee",
+                padding: "4px 8px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ fontWeight: "bold" }}>Line Spacing</span>
+              <button
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "16px",
+                  cursor: "pointer",
+                  padding: "0 4px",
+                }}
+                onClick={() => this.setState({ showLineHeightPicker: false })}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: "8px 0" }}>
+              {lineHeightOptions.map((option) => (
+                <div
+                  key={option.value}
+                  style={{
+                    padding: "6px 12px",
+                    cursor: "pointer",
+                    borderRadius: "4px",
+                    margin: "2px 0",
+                    hover: { backgroundColor: "#f4f4f4" },
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.backgroundColor = "#f0f0f0";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.backgroundColor = "transparent";
+                  }}
+                  onClick={() => this.applyLineHeight(option.value)}
+                >
+                  {option.label}
+                </div>
+              ))}
             </div>
           </div>
         )}
