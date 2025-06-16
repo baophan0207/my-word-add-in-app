@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)]
     [string]$documentName,
     
@@ -7,6 +7,15 @@ param(
 )
 
 # Script to automate Office Add-in network share setup, manifest creation, and trust configuration
+# Requires elevation but now works with current user context instead of admin context
+# 
+# Multi-User Environment Improvements:
+# - Auto-detects current user via explorer.exe process, console session, or recent profiles
+# - Creates manifest and network share in current user's Documents folder
+# - Sets proper permissions for both admin and current user
+# - Configures trusted catalogs in current user's registry (HKCU)
+# - Opens Word documents in current user's context
+#
 # Requires elevation
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Warning "Please run this script as Administrator!"
@@ -19,6 +28,7 @@ $ERROR_MANIFEST_CREATION_FAILED = 101
 $ERROR_NETWORK_SHARE_FAILED = 102
 $ERROR_OPEN_DOCUMENT_FAILED = 103
 $ERROR_ADDIN_CONFIGURATION_FAILED = 104
+$ERROR_USER_NOT_FOUND = 105
 
 # Create a global error hashtable for better error handling
 $script:ErrorDetails = @{
@@ -27,6 +37,7 @@ $script:ErrorDetails = @{
     $ERROR_NETWORK_SHARE_FAILED = "Failed to create or verify network share."
     $ERROR_OPEN_DOCUMENT_FAILED = "Failed to open the specified document."
     $ERROR_ADDIN_CONFIGURATION_FAILED = "Failed to configure the Office add-in."
+    $ERROR_USER_NOT_FOUND = "Could not determine current user context."
 }
 
 # Add required assemblies
@@ -65,23 +76,135 @@ function New-Guid {
     return [guid]::NewGuid().ToString()
 }
 
-# Function to create manifest file for Office Add-in
+# Function to get current user information (not admin)
+function Get-CurrentUser {
+    Write-Host "Determining current user context..."
+    
+    # Try multiple methods to get the actual current user
+    $currentUser = $null
+    
+    # Method 1: Try to get the user who owns explorer.exe process
+    try {
+        $explorerProcess = Get-WmiObject -Class Win32_Process -Filter "Name='explorer.exe'" | 
+            Where-Object { $_.GetOwner().User -ne "Administrator" } | 
+            Select-Object -First 1
+        if ($explorerProcess) {
+            $currentUser = $explorerProcess.GetOwner().User
+            Write-Host "Detected user from explorer.exe: $currentUser"
+        }
+    } catch {
+        Write-Verbose "Could not get user from explorer.exe process"
+    }
+    
+    # Method 2: Check who's logged on console
+    if (-not $currentUser) {
+        try {
+            $loggedOnUsers = quser 2>$null | Where-Object { $_ -match "console" -and $_ -notmatch "Administrator" }
+            if ($loggedOnUsers) {
+                $consoleUser = ($loggedOnUsers -split '\s+')[1]
+                if ($consoleUser -and $consoleUser -ne "Administrator") {
+                    $currentUser = $consoleUser
+                    Write-Host "Detected user from console session: $currentUser"
+                }
+            }
+        } catch {
+            Write-Verbose "Could not get console user"
+        }
+    }
+    
+    # Method 3: Check environment variables from registry
+    if (-not $currentUser) {
+        try {
+            # Look for recent user profiles
+            $recentProfile = Get-ChildItem "C:\Users" -Directory | 
+                Where-Object { 
+                    $_.Name -notin @("Administrator", "Public", "Default", "DefaultAppPool") -and
+                    (Test-Path (Join-Path $_.FullName "NTUSER.DAT"))
+                } | 
+                Sort-Object LastWriteTime -Descending | 
+                Select-Object -First 1
+            
+            if ($recentProfile) {
+                $currentUser = $recentProfile.Name
+                Write-Host "Detected user from recent profile: $currentUser"
+            }
+        } catch {
+            Write-Verbose "Could not detect user from profiles"
+        }
+    }
+    
+    # Fallback to environment variable (will be admin when running as admin)
+    if (-not $currentUser) {
+        $currentUser = $env:USERNAME
+        Write-Warning "Using current environment username (may be admin): $currentUser"
+    }
+    
+    # Get user profile path
+    $userProfile = "C:\Users\$currentUser"
+    if (-not (Test-Path $userProfile)) {
+        Write-Error "User profile not found: $userProfile"
+        return $null
+    }
+    
+    return @{
+        Username = $currentUser
+        ProfilePath = $userProfile
+        DocumentsPath = Join-Path $userProfile "Documents"
+    }
+}
+
+# Function to create manifest file for current user
 function New-ManifestFile {
     [CmdletBinding()]
     param (
         [Parameter()]
-        [string]$ShareName = "OfficeAddins",
+        [string]$ShareName = "",
         
         [Parameter()]
-        [string]$FolderPath = "$env:USERPROFILE\Documents\$ShareName"
+        [string]$FolderPath = ""
     )
     
     Write-Host "Creating manifest file..."
+    
+    # Get current user info and set default values
+    $userInfo = Get-CurrentUser
+    if (-not $userInfo) {
+        Write-Error "Could not determine current user"
+        return $false
+    }
+    
+    # Set user-specific share name if not provided
+    if ($ShareName -eq "") {
+        $ShareName = "OfficeAddins_$($userInfo.Username)"
+        Write-Host "Using user-specific share name: $ShareName"
+    }
+    
+    # Set folder path if not provided
+    if ($FolderPath -eq "") {
+        $FolderPath = Join-Path $userInfo.DocumentsPath $ShareName
+        Write-Host "Using user's Documents folder: $FolderPath"
+    }
     
     # Create the folder if it doesn't exist
     if (-not (Test-Path $FolderPath)) {
         New-Item -ItemType Directory -Path $FolderPath | Out-Null
         Write-Host "Created folder: $FolderPath"
+    }
+    
+    # Set folder permissions for current user
+    try {
+        $userInfo = Get-CurrentUser
+        if ($userInfo) {
+            $acl = Get-Acl $FolderPath
+            $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $userInfo.Username, "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
+            )
+            $acl.SetAccessRule($accessRule)
+            Set-Acl -Path $FolderPath -AclObject $acl
+            Write-Host "Set folder permissions for user: $($userInfo.Username)"
+        }
+    } catch {
+        Write-Warning "Could not set folder permissions: $_"
     }
     
     # This manifest includes an ExtensionPoint for PrimaryCommandSurface so that a Ribbon button is created in Word.
@@ -181,7 +304,7 @@ function New-ManifestFile {
     try {
         $manifestContent | Out-File -FilePath $manifestDest -Encoding UTF8 -Force
         Write-Host "Created manifest file in folder: $manifestDest" -ForegroundColor Green
-        return $true
+        return $manifestDest
     } catch {
         Write-Error "Failed to create manifest file: $_"
         Write-Warning "Please manually create the manifest file at: $FolderPath"
@@ -194,17 +317,44 @@ function Install-Addin {
     [CmdletBinding()]
     param (
         [Parameter()]
-        [string]$ShareName = "OfficeAddins",
+        [string]$ShareName = "",
         
         [Parameter()]
-        [string]$ShareDescription = "Office Add-ins Shared Folder",
+        [string]$ShareDescription = "",
         
         [Parameter()]
-        [string]$FolderPath = "$env:USERPROFILE\Documents\$ShareName",
+        [string]$FolderPath = "",
         
         [Parameter()]
-        [string]$RegistryPath = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs"
+        [string]$RegistryPath = ""
     )
+
+    # Get current user information
+    $userInfo = Get-CurrentUser
+    if (-not $userInfo) {
+        Write-Error "Could not determine current user"
+        return $false
+    }
+    
+    # Set user-specific defaults
+    if ($ShareName -eq "") {
+        $ShareName = "OfficeAddins_$($userInfo.Username)"
+        Write-Host "Using user-specific share name: $ShareName"
+    }
+    
+    if ($ShareDescription -eq "") {
+        $ShareDescription = "Office Add-ins Shared Folder for $($userInfo.Username)"
+    }
+    
+    # Set default paths based on current user
+    if ($FolderPath -eq "") {
+        $FolderPath = Join-Path $userInfo.DocumentsPath $ShareName
+        Write-Host "Using current user's Documents folder: $FolderPath"
+    }
+    
+    if ($RegistryPath -eq "") {
+        $RegistryPath = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs"
+    }
 
     # 1. First ensure the manifest file exists or create it
     $manifestPath = Join-Path $FolderPath "manifest.xml"
@@ -225,8 +375,22 @@ function Install-Addin {
             Write-Host "Removed existing network share: $ShareName"
         }
         
-        # Create new SMB share
-        New-SmbShare -Name $ShareName -Path $FolderPath -Description $ShareDescription -FullAccess $env:USERNAME
+        # Create new SMB share with permissions for both admin and current user
+        $shareUsers = @("Administrators")
+        if ($userInfo.Username -ne "Administrator") {
+            $shareUsers += $userInfo.Username
+        }
+        
+        New-SmbShare -Name $ShareName -Path $FolderPath -Description $ShareDescription -FullAccess $shareUsers
+        
+        # Set NTFS permissions to allow Everyone read access (needed for Office)
+        $acl = Get-Acl $FolderPath
+        $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "Everyone", "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow"
+        )
+        $acl.SetAccessRule($everyoneRule)
+        Set-Acl -Path $FolderPath -AclObject $acl
+        
         Write-Host "Created network share: \\$env:COMPUTERNAME\$ShareName" -ForegroundColor Green
         $networkPath = "\\$env:COMPUTERNAME\$ShareName"
     } catch {
@@ -234,7 +398,7 @@ function Install-Addin {
         return $false
     }
 
-    # 3. Add the network share to Word's Trusted Catalogs in the registry
+    # 3. Add the network share to Word's Trusted Catalogs in the current user's registry
     try {
         # Clear existing trusted catalogs (if any)
         Remove-Item -Path "$RegistryPath\*" -Force -ErrorAction SilentlyContinue
@@ -260,7 +424,7 @@ function Install-Addin {
         New-ItemProperty -Path $catalogPath -Name "CatalogVersion"  -Value 2           -PropertyType DWord  -Force | Out-Null
         New-ItemProperty -Path $catalogPath -Name "SkipCatalogUpdate" -Value 0         -PropertyType DWord  -Force | Out-Null
         
-        Write-Host "Added network share to trusted add-in catalogs in the registry." -ForegroundColor Green
+        Write-Host "Added network share to trusted add-in catalogs for user: $($userInfo.Username)" -ForegroundColor Green
     } catch {
         Write-Error "Failed to modify registry: $_"
         return $false
@@ -321,18 +485,37 @@ function Test-WordInstalled {
     }
 }
 
-# Function to check and handle manifest file for multiple accounts
+# Function to check and handle manifest file for current user
 function Test-ManifestExists {
     [CmdletBinding()]
     param (
         [Parameter()]
-        [string]$ShareName = "OfficeAddins",
+        [string]$ShareName = "",
         
         [Parameter()]
-        [string]$FolderPath = "$env:USERPROFILE\Documents\$ShareName"
+        [string]$FolderPath = ""
     )
     
     Write-Host "Checking if manifest file exists..."
+    
+    # Get current user info and set defaults
+    $userInfo = Get-CurrentUser
+    if (-not $userInfo) {
+        Write-Error "Could not determine current user"
+        return $false
+    }
+    
+    # Set user-specific share name if not provided
+    if ($ShareName -eq "") {
+        $ShareName = "OfficeAddins_$($userInfo.Username)"
+        Write-Host "Using user-specific share name: $ShareName"
+    }
+    
+    # Set folder path if not provided
+    if ($FolderPath -eq "") {
+        $FolderPath = Join-Path $userInfo.DocumentsPath $ShareName
+        Write-Host "Using current user's Documents folder: $FolderPath"
+    }
     
     # Create the folder if it doesn't exist
     if (-not (Test-Path $FolderPath)) {
@@ -348,7 +531,7 @@ function Test-ManifestExists {
         return $true
     }
     
-    # Check for manifests in other user profiles
+    # Check for manifests in other user profiles (for copying if needed)
     $usersFolder = "C:\Users"
     $foundManifests = @()
     
@@ -384,13 +567,32 @@ function Test-NetworkShareExists {
     [CmdletBinding()]
     param (
         [Parameter()]
-        [string]$ShareName = "OfficeAddins",
+        [string]$ShareName = "",
         
         [Parameter()]
-        [string]$FolderPath = "$env:USERPROFILE\Documents\$ShareName"
+        [string]$FolderPath = ""
     )
     
     Write-Host "Checking if network share exists..."
+    
+    # Get current user info and set defaults
+    $userInfo = Get-CurrentUser
+    if (-not $userInfo) {
+        Write-Error "Could not determine current user"
+        return $false
+    }
+    
+    # Set user-specific share name if not provided
+    if ($ShareName -eq "") {
+        $ShareName = "OfficeAddins_$($userInfo.Username)"
+        Write-Host "Using user-specific share name: $ShareName"
+    }
+    
+    # Set folder path if not provided
+    if ($FolderPath -eq "") {
+        $FolderPath = Join-Path $userInfo.DocumentsPath $ShareName
+        Write-Host "Using current user's Documents folder: $FolderPath"
+    }
     
     # Check if the share already exists
     $existingShare = Get-WmiObject -Class Win32_Share -Filter "Name='$ShareName'" -ErrorAction SilentlyContinue
@@ -408,7 +610,13 @@ function Test-NetworkShareExists {
     
     # Try to create the share
     try {
-        New-SmbShare -Name $ShareName -Path $FolderPath -Description "Office Add-ins Shared Folder" -FullAccess $env:USERNAME
+        $shareUsers = @("Administrators")
+        if ($userInfo.Username -ne "Administrator") {
+            $shareUsers += $userInfo.Username
+        }
+        
+        $shareDescription = "Office Add-ins Shared Folder for $($userInfo.Username)"
+        New-SmbShare -Name $ShareName -Path $FolderPath -Description $shareDescription -FullAccess $shareUsers
         Write-Host "Created network share: \\$env:COMPUTERNAME\$ShareName" -ForegroundColor Green
         return $true
     }
@@ -423,13 +631,24 @@ function Test-TrustedLocation {
     [CmdletBinding()]
     param (
         [Parameter()]
-        [string]$ShareName = "OfficeAddins",
+        [string]$ShareName = "",
         
         [Parameter()]
         [string]$RegistryPath = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs"
     )
     
     Write-Host "Checking if share is in trusted add-in catalogs..."
+    
+    # Get current user info and set defaults
+    if ($ShareName -eq "") {
+        $userInfo = Get-CurrentUser
+        if (-not $userInfo) {
+            Write-Error "Could not determine current user"
+            return $false
+        }
+        $ShareName = "OfficeAddins_$($userInfo.Username)"
+        Write-Host "Using user-specific share name: $ShareName"
+    }
     
     $networkPath = "\\$env:COMPUTERNAME\$ShareName"
     
@@ -1070,16 +1289,13 @@ function Open-AddInFromRibbon {
     Write-Host "Checking for add-in button on ribbon..."
     $buttonNames = @(
         "IP Agent AI",
-        "IP Agent AI Group",
-        "My Add-in",
-        "Office Add-ins",
-        "My Office Add-ins"
+        "IP Agent AI Group"
     )
     
     # First try to find the add-in button directly
     foreach ($name in $buttonNames) {
         Write-Host "Looking for button: $name"
-        if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow -TimeoutSeconds 5) {
+        if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow -TimeoutSeconds 3) {
             Write-Host "Successfully opened add-in from ribbon" -ForegroundColor Green
             return $true
         }
@@ -1133,11 +1349,117 @@ function Open-AddInFromRibbon {
     return $false
 }
 
+# Helper function to retry clicking an element with multiple attempts
+function Invoke-ClickWithRetry {
+    param (
+        [Parameter(Mandatory=$true)]
+        [System.Windows.Automation.AutomationElement]$Element,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$ElementName,
+        
+        [Parameter(Mandatory=$false)]
+        [int]$MaxRetries = 3,
+        
+        [Parameter(Mandatory=$false)]
+        [int]$DelayBetweenRetries = 500,
+        
+        [Parameter(Mandatory=$false)]
+        [int]$YOffset = 0,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$UseCoordinateClickOnly = $false
+    )
+    
+    $attempt = 0
+    $success = $false
+    
+    while ($attempt -lt $MaxRetries -and -not $success) {
+        $attempt++
+        Write-Host "Attempt $attempt of $MaxRetries to click element: $ElementName"
+        
+        try {
+            # First try to use InvokePattern if available and not forced to use coordinate click
+            if (-not $UseCoordinateClickOnly) {
+                try {
+                    $invokePattern = $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                    if ($invokePattern) {
+                        $invokePattern.Invoke()
+                        Write-Host "Successfully clicked element using InvokePattern: $ElementName" -ForegroundColor Green
+                        $success = $true
+                        break
+                    }
+                } catch {
+                    Write-Host "InvokePattern not available for $ElementName, trying coordinate click"
+                }
+            }
+            
+            # Fallback to coordinate click
+            Write-Host "Using coordinate click for element: $ElementName"
+            $point = $Element.GetClickablePoint()
+            
+            # Apply Y offset if specified
+            if ($YOffset -ne 0) {
+                [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
+                    [int]$point.X, 
+                    [int]($point.Y + $YOffset)
+                )
+            } else {
+                [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
+                    [int]$point.X, 
+                    [int]$point.Y
+                )
+            }
+            
+            Start-Sleep -Milliseconds 200
+            
+            # Check if type already exists before adding it
+            if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEventRetry').Type) {
+                $signature = @'
+                [DllImport("user32.dll", CharSet=CharSet.Auto, CallingConvention=CallingConvention.StdCall)]
+                public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
+'@
+                Add-Type -MemberDefinition $signature -Name "Win32MouseEventRetry" -Namespace Win32Functions
+            }
+            
+            # Mouse click down and up
+            [Win32Functions.Win32MouseEventRetry]::mouse_event(0x00000002, 0, 0, 0, 0)
+            Start-Sleep -Milliseconds 100
+            [Win32Functions.Win32MouseEventRetry]::mouse_event(0x00000004, 0, 0, 0, 0)
+            
+            Write-Host "Successfully clicked element using coordinates: $ElementName" -ForegroundColor Green
+            $success = $true
+            
+        } catch {
+            Write-Warning "Attempt $attempt failed to click element: $ElementName - $($_.Exception.Message)"
+            
+            if ($attempt -lt $MaxRetries) {
+                Write-Host "Waiting $DelayBetweenRetries ms before retry..."
+                Start-Sleep -Milliseconds $DelayBetweenRetries
+            }
+        }
+    }
+    
+    if (-not $success) {
+        Write-Warning "Failed to click element $ElementName after $MaxRetries attempts"
+    }
+    
+    return $success
+}
+
 # Function to open shared folder dialog
 function Open-SharedFolderDialog {
     param ($wordWindow)
     
     Write-Host "Opening Shared Folder dialog using new UI flow..."
+    
+    Write-Host "Setting focus to Word window before UI interactions..."
+    $focusResult = Set-WindowFocus -Window $wordWindow
+    if (-not $focusResult) {
+        Write-Warning "Could not set focus to Word window, but continuing anyway..."
+    } else {
+        Write-Host "Successfully set focus to Word window" -ForegroundColor Green
+    }
         
     # Look for Add-ins button in the ribbon
     Write-Host "Looking for Add-ins button in ribbon..."
@@ -1156,50 +1478,25 @@ function Open-SharedFolderDialog {
         
         if ($addInsButton) {
             Write-Host "Found Add-ins button: $name"
-            try {
-                $invokePattern = $addInsButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-                if ($invokePattern) {
-                    $invokePattern.Invoke()
-                    Write-Host "Clicked Add-ins button using InvokePattern" -ForegroundColor Green
-                    $addInsButtonFound = $true
-                    break
-                }
-            } catch {
-                Write-Host "Using coordinate click for Add-ins button"
-                $point = $addInsButton.GetClickablePoint()
-                $yOffset = 10  # Adjust this value as needed (5-15 pixels is typical)
-                [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
-                    [int]$point.X, 
-                    [int]($point.Y + $yOffset)
-                )
-                Start-Sleep -Milliseconds 200
-                
-                # Check if type already exists before adding it
-                if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEventAddins').Type) {
-                    $signature = @'
-                    [DllImport("user32.dll", CharSet=CharSet.Auto, CallingConvention=CallingConvention.StdCall)]
-                    public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
-'@
-                    Add-Type -MemberDefinition $signature -Name "Win32MouseEventAddins" -Namespace Win32Functions
-                }
-                
-                # Mouse click
-                [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000002, 0, 0, 0, 0)
-                Start-Sleep -Milliseconds 100
-                [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000004, 0, 0, 0, 0)
-                
-                Write-Host "Clicked Add-ins button using coordinates with Y-offset of $yOffset pixels" -ForegroundColor Green
+            # Use retry logic for clicking Add-ins button
+            $clickSuccess = Invoke-ClickWithRetry -Element $addInsButton -ElementName $name -YOffset 10
+            if ($clickSuccess) {
                 $addInsButtonFound = $true
                 break
             }
         }
     }
     
+    Write-Host "Setting focus to Word window before UI interactions..."
+    $focusResult = Set-WindowFocus -Window $wordWindow
+    if (-not $focusResult) {
+        Write-Warning "Could not set focus to Word window, but continuing anyway..."
+    } else {
+        Write-Host "Successfully set focus to Word window" -ForegroundColor Green
+    }
+    
     $newMethodWorked = $false
-    if ($addInsButtonFound) {
-        # Wait for the add-ins dropdown to appear
-        Start-Sleep -Seconds 2
-        
+    if ($addInsButtonFound) {        
         # Look for More Add-ins button
         Write-Host "Looking for More Add-ins button..."
         $moreAddInsNames = @("More Add-ins", "Get Add-ins", "More")
@@ -1218,26 +1515,9 @@ function Open-SharedFolderDialog {
             
             if ($moreAddInsButton) {
                 Write-Host "Found More Add-ins button: $name"
-                try {
-                    $invokePattern = $moreAddInsButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-                    if ($invokePattern) {
-                        $invokePattern.Invoke()
-                        Write-Host "Clicked More Add-ins button using InvokePattern" -ForegroundColor Green
-                        $moreAddInsFound = $true
-                        break
-                    }
-                } catch {
-                    Write-Host "Using coordinate click for More Add-ins button"
-                    $point = $moreAddInsButton.GetClickablePoint()
-                    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$point.X, [int]$point.Y)
-                    Start-Sleep -Milliseconds 200
-                    
-                    # Mouse click
-                    [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000002, 0, 0, 0, 0)
-                    Start-Sleep -Milliseconds 100
-                    [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000004, 0, 0, 0, 0)
-                    
-                    Write-Host "Clicked More Add-ins button using coordinates" -ForegroundColor Green
+                # Use retry logic for clicking More Add-ins button
+                $clickSuccess = Invoke-ClickWithRetry -Element $moreAddInsButton -ElementName $name
+                if ($clickSuccess) {
                     $moreAddInsFound = $true
                     break
                 }
@@ -1261,11 +1541,33 @@ function Open-SharedFolderDialog {
     # If the new method didn't work, try the old method (File -> Get Add-ins)
     if (-not $newMethodWorked) {
         Write-Host "Trying fallback method (File -> Get Add-ins)..."
+        
+        # **NEW: Ensure Word window still has focus before fallback method**
+        Write-Host "Re-focusing Word window for fallback method..."
+        $focusResult = Set-WindowFocus -Window $wordWindow
+        if (-not $focusResult) {
+            Write-Warning "Could not re-focus Word window for fallback method"
+        }
+        Start-Sleep -Seconds 1
+        
         $fileTabNames = @("File", "FILE", "File Tab")
         $found = $false
         foreach ($name in $fileTabNames) {
-            if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
-                $found = $true
+            # Use retry logic for Find-AndClickElement calls
+            $retryCount = 0
+            $maxRetries = 3
+            while ($retryCount -lt $maxRetries -and -not $found) {
+                $retryCount++
+                Write-Host "Attempt $retryCount of $maxRetries to find and click: $name"
+                if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
+                    $found = $true
+                    break
+                }
+                if ($retryCount -lt $maxRetries) {
+                    Start-Sleep -Milliseconds 500
+                }
+            }
+            if ($found) {
                 break
             }
         }
@@ -1280,8 +1582,21 @@ function Open-SharedFolderDialog {
         $getAddinsNames = @("Get Add-ins", "Office Add-ins", "Get Office Add-ins")
         $addinsFound = $false
         foreach ($name in $getAddinsNames) {
-            if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
-                $addinsFound = $true
+            # Use retry logic for Find-AndClickElement calls
+            $retryCount = 0
+            $maxRetries = 3
+            while ($retryCount -lt $maxRetries -and -not $addinsFound) {
+                $retryCount++
+                Write-Host "Attempt $retryCount of $maxRetries to find and click: $name"
+                if (Find-AndClickElement -ElementName $name -ParentElement $wordWindow) {
+                    $addinsFound = $true
+                    break
+                }
+                if ($retryCount -lt $maxRetries) {
+                    Start-Sleep -Milliseconds 500
+                }
+            }
+            if ($addinsFound) {
                 break
             }
         }
@@ -1325,21 +1640,11 @@ function Open-SharedFolderDialog {
     )
 
     if ($sharedFolderTab) {
-        try {
-            $invokePattern = $sharedFolderTab.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-            if ($invokePattern) {
-                $invokePattern.Invoke()
-                Write-Host "Clicked SHARED FOLDER tab" -ForegroundColor Green
-            }
-        } catch {
-            Write-Host "Using alternative method to click SHARED FOLDER tab"
-            $point = $sharedFolderTab.GetClickablePoint()
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$point.X, [int]$point.Y)
-            Start-Sleep -Milliseconds 100
-            # Mouse click
-            [Win32Functions.Win32MouseEvent]::mouse_event(0x00000002, 0, 0, 0, 0)
-            Start-Sleep -Milliseconds 100
-            [Win32Functions.Win32MouseEvent]::mouse_event(0x00000004, 0, 0, 0, 0)
+        # Use retry logic for clicking SHARED FOLDER tab
+        $clickSuccess = Invoke-ClickWithRetry -Element $sharedFolderTab -ElementName "SHARED FOLDER tab"
+        if (-not $clickSuccess) {
+            Write-Warning "Could not click SHARED FOLDER tab after retries"
+            return $false
         }
     } else {
         Write-Warning "Could not find SHARED FOLDER tab"
@@ -1421,28 +1726,10 @@ function Open-SharedFolderDialog {
         
         if ($refreshButton) {
             Write-Host "Found Refresh button, clicking..."
-            try {
-                # Try to click using InvokePattern
-                try {
-                    $invokePattern = $refreshButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-                    if ($invokePattern) {
-                        $invokePattern.Invoke()
-                        Write-Host "Clicked Refresh button using InvokePattern" -ForegroundColor Green
-                    }
-                } catch {
-                    Write-Host "InvokePattern not available, trying coordinate click"
-                    $point = $refreshButton.GetClickablePoint()
-                    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$point.X, [int]$point.Y)
-                    Start-Sleep -Milliseconds 200
-                    
-                    # Mouse click down and up
-                    [Win32Functions.Win32MouseEvent]::mouse_event(0x00000002, 0, 0, 0, 0)
-                    Start-Sleep -Milliseconds 100
-                    [Win32Functions.Win32MouseEvent]::mouse_event(0x00000004, 0, 0, 0, 0)
-                    
-                    Write-Host "Clicked Refresh button using coordinates" -ForegroundColor Green
-                }
-                
+            # Use retry logic for clicking Refresh button
+            $clickSuccess = Invoke-ClickWithRetry -Element $refreshButton -ElementName "Refresh button"
+            
+            if ($clickSuccess) {
                 # Wait for refresh to complete
                 Write-Host "Waiting for refresh to complete..."
                 Start-Sleep -Seconds 3
@@ -1454,8 +1741,8 @@ function Open-SharedFolderDialog {
                     Write-Host "Add-in found after refreshing!" -ForegroundColor Green
                     break
                 }
-            } catch {
-                Write-Warning "Failed to click Refresh button: $_"
+            } else {
+                Write-Warning "Failed to click Refresh button after retries"
             }
         } else {
             Write-Warning "Could not find Refresh button"
@@ -1479,28 +1766,53 @@ function Open-SharedFolderDialog {
         $clickX = $boundingRect.X + ($boundingRect.Width / 2)
         $clickY = $boundingRect.Y + ($boundingRect.Height / 2)
         
-        # Move mouse and click
-        [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
-            [int]$clickX, 
-            [int]$clickY
-        )
-        Start-Sleep -Milliseconds 200
+        # Use retry logic for clicking the target item
+        $retryCount = 0
+        $maxRetries = 3
+        $clickSuccess = $false
         
-        # Define the mouse_event function if it doesn't exist to ensure it's available
-        if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEvent').Type) {
-            $signature = @'
-            [DllImport("user32.dll", CharSet=CharSet.Auto, CallingConvention=CallingConvention.StdCall)]
-            public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
+        while ($retryCount -lt $maxRetries -and -not $clickSuccess) {
+            $retryCount++
+            Write-Host "Attempt $retryCount of $maxRetries to click on add-in item"
+            
+            try {
+                # Move mouse and click
+                [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(
+                    [int]$clickX, 
+                    [int]$clickY
+                )
+                Start-Sleep -Milliseconds 200
+                
+                # Define the mouse_event function if it doesn't exist to ensure it's available
+                if (-not ([System.Management.Automation.PSTypeName]'Win32Functions.Win32MouseEvent').Type) {
+                    $signature = @'
+                    [DllImport("user32.dll", CharSet=CharSet.Auto, CallingConvention=CallingConvention.StdCall)]
+                    public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
 '@
-            Add-Type -MemberDefinition $signature -Name "Win32MouseEvent" -Namespace Win32Functions
+                    Add-Type -MemberDefinition $signature -Name "Win32MouseEvent" -Namespace Win32Functions
+                }
+                
+                # Mouse click down and up
+                [Win32Functions.Win32MouseEvent]::mouse_event(0x00000002, 0, 0, 0, 0)
+                Start-Sleep -Milliseconds 100
+                [Win32Functions.Win32MouseEvent]::mouse_event(0x00000004, 0, 0, 0, 0)
+                
+                Write-Host "Successfully clicked on add-in using calculated center position" -ForegroundColor Green
+                $clickSuccess = $true
+                
+            } catch {
+                Write-Warning "Attempt $retryCount failed to click add-in item: $_"
+                if ($retryCount -lt $maxRetries) {
+                    Start-Sleep -Milliseconds 500
+                }
+            }
         }
         
-        # Mouse click down and up
-        [Win32Functions.Win32MouseEvent]::mouse_event(0x00000002, 0, 0, 0, 0)
-        Start-Sleep -Milliseconds 100
-        [Win32Functions.Win32MouseEvent]::mouse_event(0x00000004, 0, 0, 0, 0)
+        if (-not $clickSuccess) {
+            Write-Warning "Failed to click add-in item after $maxRetries attempts"
+            return $false
+        }
         
-        Write-Host "Clicked on add-in using calculated center position" -ForegroundColor Green
         Start-Sleep -Milliseconds 500
 
         # Now find and click the Add button
@@ -1516,16 +1828,14 @@ function Open-SharedFolderDialog {
 
         if ($addButton) {
             Write-Host "Found Add button, attempting to click..." -ForegroundColor Green
-            try {
-                $invokePattern = $addButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-                if ($invokePattern) {
-                    $invokePattern.Invoke()
-                    Write-Host "Clicked Add button using InvokePattern" -ForegroundColor Green
-                    Start-Sleep -Seconds 5
-                    return $true
-                }
-            } catch {
-                Write-Warning "Failed to click Add button: $_"
+            # Use retry logic for clicking Add button
+            $clickSuccess = Invoke-ClickWithRetry -Element $addButton -ElementName "Add button"
+            
+            if ($clickSuccess) {
+                Start-Sleep -Seconds 5
+                return $true
+            } else {
+                Write-Warning "Failed to click Add button after retries"
                 return $false
             }
         } else {
@@ -1540,7 +1850,49 @@ function Open-SharedFolderDialog {
     return $false
 }
 
-# Function to open a Word document from a URL
+# Function to start Word as current user (not admin)
+function Start-WordAsCurrentUser {
+    param (
+        [string]$DocumentPath = "",
+        [string]$DocumentUrl = ""
+    )
+    
+    $userInfo = Get-CurrentUser
+    if (-not $userInfo) {
+        Write-Error "Could not determine current user"
+        return $false
+    }
+    
+    try {
+        # If we have a document URL, use it directly
+        if ($DocumentUrl -ne "") {
+            Write-Host "Launching Word with document URL: $DocumentUrl"
+            Start-Process "winword.exe" -ArgumentList "`"$DocumentUrl`"" -Wait:$false
+            Start-Sleep -Seconds 3  # Wait for Word to start
+            return $true
+        }
+        # If we have a document path, use it
+        elseif ($DocumentPath -ne "" -and (Test-Path $DocumentPath)) {
+            Write-Host "Launching Word with document: $DocumentPath"
+            Start-Process "winword.exe" -ArgumentList "`"$DocumentPath`"" -Wait:$false
+            Start-Sleep -Seconds 3  # Wait for Word to start
+            return $true
+        }
+        # Just launch Word
+        else {
+            Write-Host "Launching Word without document"
+            Start-Process "winword.exe" -Wait:$false
+            Start-Sleep -Seconds 3  # Wait for Word to start
+            return $true
+        }
+    }
+    catch {
+        Write-Error "Failed to launch Word as current user: $_"
+        return $false
+    }
+}
+
+# Function to open a Word document from a URL for current user
 function Open-WordDocument {
     [CmdletBinding()]
     param (
@@ -1551,50 +1903,106 @@ function Open-WordDocument {
         [string]$DocumentUrl = ""
     )
     
-    Write-Host "Attempting to open Word document: $DocumentName"
+    Write-Host "Attempting to open Word document: $DocumentName for current user"
     
+    # Get current user info for proper document location
+    $userInfo = Get-CurrentUser
+    if (-not $userInfo) {
+        Write-Warning "Could not determine current user, using default paths"
+    }
+    
+    # Try to launch Word as current user instead of using COM (which runs as admin)
     try {
-        # Try to use COM object to open Word
-        $word = New-Object -ComObject Word.Application
-        $word.Visible = $true
-        
-        # If URL is provided, download the file first
         if ($DocumentUrl -ne "") {
-            Write-Host "Opening document from URL: $DocumentUrl"
-            # $tempFile = Join-Path $env:TEMP "$DocumentName"
-            
-            try {
-                # Download the file
-                # Invoke-WebRequest -Uri $DocumentUrl -OutFile $tempFile
-                
-                # Open the downloaded file
-                $word.Documents.Open($DocumentUrl) | Out-Null
-                Write-Host "Document opened successfully from URL." -ForegroundColor Green
-                return $true
-            }
-            catch {
-                Write-Error "Failed to open document from URL: $_"
-                $word.Quit()
-                [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
-                return $false
-            }
+            Write-Host "Opening document from URL as current user: $DocumentUrl"
+            return Start-WordAsCurrentUser -DocumentUrl $DocumentUrl
         }
         else {
-            # Open local document by name
-            # This is a simplified approach; in practice you'd need to locate the file
-            $word.Documents.Open($DocumentName) | Out-Null
-            Write-Host "Document opened successfully." -ForegroundColor Green
-            return $true
+            # Try to find document in user's documents folder first
+            if ($userInfo) {
+                $userDocPath = Join-Path $userInfo.DocumentsPath $DocumentName
+                if (Test-Path $userDocPath) {
+                    Write-Host "Opening document from user documents: $userDocPath"
+                    return Start-WordAsCurrentUser -DocumentPath $userDocPath
+                }
+            }
+            
+            # If document doesn't exist, just launch Word
+            Write-Host "Document not found, launching Word for user to create: $DocumentName"
+            return Start-WordAsCurrentUser
         }
     }
     catch {
-        Write-Error "Failed to open Word document: $_"
-        return $false
+        Write-Error "Failed to open Word document as current user: $_"
+        
+        # Fallback to COM object (will run as admin but at least works)
+        Write-Warning "Falling back to COM object (will run as admin)"
+        try {
+            $word = New-Object -ComObject Word.Application
+            $word.Visible = $true
+            
+            # If URL is provided, open from URL
+            if ($DocumentUrl -ne "") {
+                Write-Host "Opening document from URL using COM: $DocumentUrl"
+                try {
+                    $word.Documents.Open($DocumentUrl) | Out-Null
+                    Write-Host "Document opened successfully from URL using COM" -ForegroundColor Green
+                    return $true
+                }
+                catch {
+                    Write-Error "Failed to open document from URL: $_"
+                    $word.Quit()
+                    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
+                    return $false
+                }
+            }
+            else {
+                # Try to find document in user's documents folder first
+                if ($userInfo) {
+                    $userDocPath = Join-Path $userInfo.DocumentsPath $DocumentName
+                    if (Test-Path $userDocPath) {
+                        $word.Documents.Open($userDocPath) | Out-Null
+                        Write-Host "Document opened from user documents using COM: $userDocPath" -ForegroundColor Green
+                        return $true
+                    }
+                }
+                
+                # Create new document if not found
+                Write-Host "Creating new document using COM: $DocumentName"
+                $newDoc = $word.Documents.Add()
+                if ($userInfo) {
+                    $saveAsPath = Join-Path $userInfo.DocumentsPath $DocumentName
+                    $newDoc.SaveAs([ref]$saveAsPath)
+                    Write-Host "New document created and saved using COM: $saveAsPath" -ForegroundColor Green
+                } else {
+                    $newDoc.SaveAs([ref]$DocumentName)
+                    Write-Host "New document created using COM: $DocumentName" -ForegroundColor Green
+                }
+                return $true
+            }
+        }
+        catch {
+            Write-Error "Failed to open Word document using COM: $_"
+            return $false
+        }
     }
 }
 
 # Main script
 try {
+    Write-Host "=== Office Add-in Setup for Current User ===" -ForegroundColor Cyan
+    
+    # 0. Get current user information
+    $userInfo = Get-CurrentUser
+    if (-not $userInfo) {
+        Write-Error "Could not determine current user"
+        exit $ERROR_USER_NOT_FOUND
+    }
+    
+    Write-Host "Target User: $($userInfo.Username)" -ForegroundColor Green
+    Write-Host "Profile Path: $($userInfo.ProfilePath)" -ForegroundColor Green
+    Write-Host "Documents Path: $($userInfo.DocumentsPath)" -ForegroundColor Green
+    
     # 1. Check if Word is installed
     $wordInstalled = Test-WordInstalled
     if (-not $wordInstalled) {
@@ -1603,10 +2011,10 @@ try {
     }
     
     # 2. First check manifest file existence and create if needed
-    # This is now the first step in the flow as requested
+    Write-Host "`nChecking manifest file..." -ForegroundColor Yellow
     $manifestExists = Test-ManifestExists
     if (-not $manifestExists) {
-        Write-Host "Creating manifest file..."
+        Write-Host "Creating manifest file for current user..."
         $manifestCreated = New-ManifestFile
         if (-not $manifestCreated) {
             Write-Error "Failed to create manifest file"
@@ -1617,6 +2025,7 @@ try {
     }
     
     # 3. Now check network share exists and create if needed
+    Write-Host "`nChecking network share..." -ForegroundColor Yellow
     $shareExists = Test-NetworkShareExists
     if (-not $shareExists) {
         Write-Error "Failed to create or verify network share."
@@ -1624,9 +2033,10 @@ try {
     }
     
     # 4. Check if share is in trusted locations and register if needed
+    Write-Host "`nChecking trusted catalogs..." -ForegroundColor Yellow
     $isTrusted = Test-TrustedLocation
     if (-not $isTrusted) {
-        Write-Host "Adding network share to trusted locations..."
+        Write-Host "Adding network share to trusted locations for current user..."
         # Clear existing trusted catalogs (if any)
         Remove-Item -Path "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\*" -Force -ErrorAction SilentlyContinue
         
@@ -1642,15 +2052,18 @@ try {
         # Create a subkey for this catalog
         New-Item -Path $catalogPath -Force | Out-Null
         
-        # Set required registry values
+        # Set required registry values using current user's share
+        $userShareName = "OfficeAddins_$($userInfo.Username)"
+        $userNetworkPath = "\\$env:COMPUTERNAME\$userShareName"
+        
         New-ItemProperty -Path $catalogPath -Name "Id"              -Value $catalogGuid -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $catalogPath -Name "Url"             -Value "\\$env:COMPUTERNAME\OfficeAddins" -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $catalogPath -Name "Url"             -Value $userNetworkPath -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $catalogPath -Name "Flags"           -Value 3           -PropertyType DWord  -Force | Out-Null
         New-ItemProperty -Path $catalogPath -Name "Type"            -Value 2           -PropertyType DWord  -Force | Out-Null
         New-ItemProperty -Path $catalogPath -Name "CatalogVersion"  -Value 2           -PropertyType DWord  -Force | Out-Null
         New-ItemProperty -Path $catalogPath -Name "SkipCatalogUpdate" -Value 0         -PropertyType DWord  -Force | Out-Null
         
-        Write-Host "Added network share to trusted add-in catalogs in the registry." -ForegroundColor Green
+        Write-Host "Added network share to trusted add-in catalogs for user: $($userInfo.Username)" -ForegroundColor Green
     }
     
     # 5. If URL is provided, open the document
@@ -1761,18 +2174,25 @@ try {
     }
     
     # Setup completed successfully
-    Write-Host "`nSetup completed successfully!" -ForegroundColor Green
-    Write-Host "The Word Add-in has been configured with the following settings:"
-    Write-Host "- Manifest file location: $env:USERPROFILE\Documents\OfficeAddins\manifest.xml"
-    Write-Host "- Network share: \\$env:COMPUTERNAME\OfficeAddins"
+    Write-Host "`n=== Setup Completed Successfully ===" -ForegroundColor Green
+    Write-Host "The Word Add-in has been configured for user: $($userInfo.Username)"
+    Write-Host "Configuration details:"
+    Write-Host "- Target User: $($userInfo.Username)" -ForegroundColor Cyan
+    
+    $userShareName = "OfficeAddins_$($userInfo.Username)"
+    $userNetworkPath = "\\$env:COMPUTERNAME\$userShareName"
+    
+    Write-Host "- Manifest file location: $($userInfo.DocumentsPath)\$userShareName\manifest.xml" -ForegroundColor Cyan
+    Write-Host "- Network share: $userNetworkPath" -ForegroundColor Cyan
+    Write-Host "- Registry configured for: $($userInfo.Username)" -ForegroundColor Cyan
     if ($documentUrl -ne "") {
-        Write-Host "- Document opened: $documentName from $documentUrl"
+        Write-Host "- Document opened: $documentName from $documentUrl" -ForegroundColor Cyan
     }
     
-    Write-Host "`nIMPORTANT:"
+    Write-Host "`nNext Steps for user '$($userInfo.Username)':" -ForegroundColor Yellow
     Write-Host "1. If Word is not already open, open it now."
     Write-Host "2. Click File > Options > Trust Center > Trust Center Settings > Trusted Add-in Catalogs."
-    Write-Host "3. Verify that \\$env:COMPUTERNAME\OfficeAddins is listed and check 'Show in Menu'."
+    Write-Host "3. Verify that $userNetworkPath is listed and check 'Show in Menu'."
     Write-Host "4. Click OK and restart Word."
     Write-Host "5. After Word starts, click 'Insert' tab > 'My Add-ins' > 'SHARED FOLDER' and select the add-in."
     

@@ -10,7 +10,13 @@ if (-not (Test-Path $ExePath)) {
 }
 
 # Register the custom URI scheme
-$registryPath = "HKCU:\Software\Classes\wordaddin"
+$registryPath = "HKLM:\Software\Classes\wordaddin"
+
+# Verify we have admin rights before proceeding
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Error "Administrator privileges are required to register the URI handler at the machine level."
+    exit 1
+}
 
 # Create the main key
 if (-not (Test-Path $registryPath)) {
@@ -33,5 +39,5 @@ if (-not (Test-Path $shellPath)) {
 $commandValue = "`"$ExePath`" `"%1`""
 Set-ItemProperty -Path $shellPath -Name "(Default)" -Value $commandValue
 
-Write-Host "Custom URI protocol 'wordaddin://' has been registered successfully!"
-Write-Host "It will execute: $commandValue" 
+Write-Host "Custom URI protocol 'wordaddin://' has been registered successfully for all users!"
+Write-Host "It will execute: $commandValue"

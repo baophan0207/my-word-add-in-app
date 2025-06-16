@@ -1,0 +1,87 @@
+.document-container {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+}
+
+.sidebar {
+  width: 300px;
+  overflow-y: auto;
+}
+
+.document-viewer {
+  flex: 1;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.documents-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.document-item {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.document-item:hover {
+  background-color: #f0f0f0;
+}
+
+.status-message {
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 4px;
+  background-color: #f8f9fa;
+}
+
+.installation-required {
+  font-size: 0.8em;
+  color: #666;
+  display: block;
+  margin-top: 5px;
+}
+
+.document-item {
+  transition: opacity 0.3s ease;
+}
+
+.document-status {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #666;
+}
+
+.status-changed {
+  background-color: #fff9c4; /* Light yellow */
+  animation: pulse 2s;
+}
+
+.status-saved {
+  background-color: #c8e6c9; /* Light green */
+}
+
+.status-opening {
+  background-color: #e3f2fd; /* Light blue */
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+  }
+}
