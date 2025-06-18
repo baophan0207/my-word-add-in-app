@@ -10,6 +10,7 @@ const useStyles = makeStyles({
     paddingBottom: "30px",
     paddingTop: "100px",
     // backgroundColor: tokens.colorNeutralBackground3,
+    color: "#d2d2d2",
   },
   message: {
     fontSize: tokens.fontSizeHero900,

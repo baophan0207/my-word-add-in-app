@@ -1,49 +1,28 @@
-import { makeStyles, tokens } from "@fluentui/react-components";
 import PropTypes from "prop-types";
 import * as React from "react";
+
 import Header from "./Header";
+import Button from "./BasicComponents/Button/Button";
+import Popup from "./BasicComponents/Popup/Popup";
+import Enhancements from "./Enhancements/Enhancements";
+
+import "./App.scss";
 
 /* global Word console, Office, fetch, setTimeout, FormData, Blob */
 
-const useStyles = makeStyles({
-  root: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    backgroundColor: "#212E33",
-    color: "#D2D2D2",
-  },
-  statusContainer: {
-    padding: "12px",
-    textAlign: "center",
-    marginTop: "10px",
-    transition: "background-color 0.3s ease",
-  },
-  successStatus: {
-    backgroundColor: "#ecf8f0",
-    color: "#0e6027",
-    fontWeight: tokens.fontWeightSemibold,
-  },
-  errorStatus: {
-    backgroundColor: "#fef0f1",
-    color: "#d13438",
-    fontWeight: tokens.fontWeightSemibold,
-  },
-});
-
 const App = (props) => {
   const { title } = props;
-  const styles = useStyles();
   const [documentStatus, setDocumentStatus] = React.useState("Monitoring document...");
+  const [isPopupOpen, setIsPopupOpen] = React.useState(false);
 
   // Function to determine which status style to apply
   const getStatusStyle = () => {
     if (documentStatus.includes("Error")) {
-      return styles.errorStatus;
+      return "error-status";
     } else if (documentStatus.includes("Document updated")) {
-      return styles.successStatus;
+      return "success-status";
     } else {
-      return styles.monitoringStatus;
+      return "monitoring-status";
     }
   };
 
@@ -229,36 +208,28 @@ const App = (props) => {
     };
   }, []);
 
+  const closePopup = () => {
+    setIsPopupOpen(false);
+  };
+
   return (
-    <div className={styles.root}>
+    <div className="app-root">
       <Header logo="assets/logo.svg" title={title} message="Welcome" />
 
-      <div
-        style={{
-          width: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <h2
-          style={{
-            fontSize: tokens.fontSizeBase500,
-            fontColor: tokens.colorNeutralBackgroundStatic,
-            fontWeight: tokens.fontWeightRegular,
-            paddingLeft: "10px",
-            paddingRight: "10px",
-            lineHeight: "normal",
-            textAlign: "center",
-          }}
-        >
-          Your document will be saved automatically with better text!
-        </h2>
+      <div className="content-container">
+        <h2 className="content-heading">Your document will be saved automatically with better text!</h2>
       </div>
 
-      <div className={`${styles.statusContainer} ${getStatusStyle()}`}>
-        <p style={{ margin: 0, padding: "4px 0" }}>{documentStatus}</p>
+      <div className={`status-container ${getStatusStyle()}`}>
+        <p className="status-message">{documentStatus}</p>
+      </div>
+
+      <Popup open={isPopupOpen} onClose={closePopup} logo="assets/logo.svg" name="IP Agent AI">
+        <Enhancements />
+      </Popup>
+
+      <div className="button-container">
+        <Button label="Enhance with AI" onClick={() => setIsPopupOpen(true)} />
       </div>
     </div>
   );

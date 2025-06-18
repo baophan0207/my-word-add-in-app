@@ -1,0 +1,94 @@
+@use "../../../index" as *;
+
+.selection-container {
+  position: relative;
+  width: 100%;
+  font-size: 14px;
+  user-select: none;
+  color: $tertiary-text-color;
+}
+
+.selection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid $tertiary-text-color;
+  border-radius: 4px;
+  background-color: #ffffff;
+  cursor: pointer;
+  height: 38px;
+  box-sizing: border-box;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+
+  &:hover {
+    border-color: #b3b3b3;
+  }
+
+  &.active {
+    border-color: $cta-color;
+    box-shadow: 0 0 0 2px rgba($cta-color, 0.25);
+  }
+}
+
+.selection-value {
+  // Default color for placeholder is inherited from container
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.selected-value {
+    color: #333; // Only apply this color when a real value is selected
+  }
+}
+
+.selection-arrow {
+  margin-left: 8px;
+  color: #666;
+  transition: transform 0.2s;
+}
+
+.selection-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 2px;
+  background-color: #fff;
+  color: #333;
+  border: 1px solid #d1d1d1;
+  border-radius: 4px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.selection-dropdown-header {
+  padding: 8px 12px;
+  color: $tertiary-text-color;
+  font-weight: 500;
+  border-bottom: 1px solid #eee;
+  background-color: #f9f9f9;
+}
+
+.selection-item {
+  padding: 8px 12px;
+  cursor: pointer;
+
+  &:hover {
+    background-color: #f5f5f5;
+  }
+
+  &.selected {
+    background-color: #f0f0f0;
+  }
+}
+
+.selection-no-options {
+  padding: 8px 12px;
+  color: $tertiary-text-color;
+  font-style: italic;
+}
