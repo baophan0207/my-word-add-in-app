@@ -7,9 +7,6 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    paddingBottom: "30px",
-    paddingTop: "100px",
-    // backgroundColor: tokens.colorNeutralBackground3,
     color: "#d2d2d2",
   },
   message: {

@@ -214,23 +214,34 @@ const App = (props) => {
 
   return (
     <div className="app-root">
-      <Header logo="assets/logo.svg" title={title} message="Welcome" />
-
-      <div className="content-container">
-        <h2 className="content-heading">Your document will be saved automatically with better text!</h2>
+      {/* Top Section - Header */}
+      <div className="header-section">
+        <Header logo="assets/logo.svg" title={title} message="Welcome" />
       </div>
 
-      <div className={`status-container ${getStatusStyle()}`}>
+      {/* Middle Section - Centered Content */}
+      <div className="middle-section">
+        <div className="content-container">
+          <h2 className="content-heading">Your document is automatically saved whenever you make changes.</h2>
+        </div>
+
+        <div className="tracking-status">
+          <p className="tracking-message">Tracking changes ...</p>
+        </div>
+
+        <div className="button-container">
+          <Button label="Enhance with AI" onClick={() => setIsPopupOpen(true)} />
+        </div>
+      </div>
+
+      {/* Bottom Section - Document Status */}
+      <div className={`document-status ${getStatusStyle()}`}>
         <p className="status-message">{documentStatus}</p>
       </div>
 
       <Popup open={isPopupOpen} onClose={closePopup} logo="assets/logo.svg" name="IP Agent AI">
         <Enhancements />
       </Popup>
-
-      <div className="button-container">
-        <Button label="Enhance with AI" onClick={() => setIsPopupOpen(true)} />
-      </div>
     </div>
   );
 };

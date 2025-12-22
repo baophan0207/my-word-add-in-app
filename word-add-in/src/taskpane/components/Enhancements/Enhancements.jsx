@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Selection from "../BasicComponents/Selection/Selection";
 import TextArea from "../BasicComponents/TextArea/TextArea";
 import Button from "../BasicComponents/Button/Button";
 import "./Enhancements.scss";
 
-/* global console, setTimeout */
+/* global console, setTimeout, Word */
 
 // Helper function to format date as "mm/dd/yyyy hh:mm AM/PM"
 const formatDate = (date) => {
@@ -23,11 +23,25 @@ const formatDate = (date) => {
   return `${dateStr} ${timeStr}`;
 };
 
+const formatTimeDisplay = (date, thresholdSeconds = 60) => {
+  const now = new Date();
+  const diffInSeconds = Math.abs((now - date) / 1000);
+
+  if (diffInSeconds < thresholdSeconds) {
+    return "Just now";
+  }
+
+  return formatDate(date);
+};
+
 const Enhancements = () => {
   const [selectedSection, setSelectedSection] = useState(null);
   const [textContent, setTextContent] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [timeDisplay, setTimeDisplay] = useState(formatDate(new Date()));
+  const [lastUpdatedTime, setLastUpdatedTime] = useState(new Date(2025, 12, 21));
+
+  // Track previously highlighted section to clear it when changing selection
+  const previousHighlightRef = useRef(null);
 
   const sections = [
     { label: "Title", value: "title" },
@@ -37,10 +51,78 @@ const Enhancements = () => {
     { label: "Claims", value: "claims" },
   ];
 
+  // Function to highlight section title in the Word document
+  const highlightSectionInDocument = async (sectionValue) => {
+    try {
+      await Word.run(async (context) => {
+        const body = context.document.body;
+
+        // Clear ALL previous highlights by searching for all section titles
+        for (const section of sections) {
+          const searchText = section.label;
+          const results = body.search(searchText, { matchCase: false, matchWholeWord: true });
+          context.load(results, "items");
+          await context.sync();
+
+          // Clear highlights from found sections
+          for (let i = 0; i < results.items.length; i++) {
+            results.items[i].font.highlightColor = null;
+          }
+        }
+        await context.sync();
+
+        // Now highlight the new section
+        const targetSection = sections.find((s) => s.value === sectionValue);
+        if (!targetSection) return;
+
+        const searchText = targetSection.label;
+        if (!searchText) return;
+
+        // Search for the section title in the document
+        const searchResults = body.search(searchText, { matchCase: false, matchWholeWord: true });
+        context.load(searchResults, "items");
+        await context.sync();
+
+        if (searchResults.items.length > 0) {
+          // Load font properties to find the bold/heading version
+          for (let i = 0; i < searchResults.items.length; i++) {
+            context.load(searchResults.items[i], "font/bold, style");
+          }
+          await context.sync();
+
+          // Find the first bold occurrence
+          let targetRange = searchResults.items[0];
+          for (let i = 0; i < searchResults.items.length; i++) {
+            if (searchResults.items[i].font.bold === true) {
+              targetRange = searchResults.items[i];
+              break;
+            }
+          }
+
+          // Apply highlight color (Yellow)
+          targetRange.font.highlightColor = "Yellow";
+          targetRange.select();
+
+          await context.sync();
+
+          previousHighlightRef.current = sectionValue;
+          console.log(`Highlighted: ${searchText}`);
+        } else {
+          console.log(`Section "${searchText}" not found in document`);
+        }
+      });
+    } catch (error) {
+      console.error("Error highlighting section:", error);
+    }
+  };
+
   const handleSectionChange = (value) => {
     setSelectedSection(value);
-    // eslint-disable-next-line no-console
-    console.log("Selected section:", value);
+
+    // Highlight the corresponding section in the document
+    if (value) {
+      highlightSectionInDocument(value);
+    }
   };
 
   const handleTextChange = (value) => {
@@ -50,27 +132,10 @@ const Enhancements = () => {
   const handleEnhanceClick = () => {
     if (isProcessing) return;
 
-    // Start processing
     setIsProcessing(true);
-
-    // Simulate processing for 5 seconds
     setTimeout(() => {
-      // Processing done
       setIsProcessing(false);
-      setTimeDisplay("Just Now");
-
-      // Clear form inputs
-      setSelectedSection(null);
-      setTextContent("");
-
-      // After 3 more seconds, show the actual time
-      setTimeout(() => {
-        setTimeDisplay(formatDate(new Date()));
-      }, 3000);
-
-      console.log("Enhancement completed!");
-      console.log("Section:", selectedSection);
-      console.log("Content:", textContent);
+      setLastUpdatedTime(new Date());
     }, 5000);
   };
 
@@ -101,7 +166,6 @@ const Enhancements = () => {
               fullHeight={true}
               scrollable={true}
               height={100}
-              maxHeight={400}
             />
           </div>
         </div>
@@ -125,7 +189,7 @@ const Enhancements = () => {
         ) : (
           <>
             <span>Document Last Updated:</span>
-            <span className={`enhancements-document-status-time`}>{timeDisplay}</span>
+            <span className={`enhancements-document-status-time`}>{formatTimeDisplay(lastUpdatedTime)}</span>
           </>
         )}
       </div>
