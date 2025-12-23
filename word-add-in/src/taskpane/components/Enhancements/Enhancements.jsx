@@ -173,10 +173,12 @@ const Enhancements = () => {
         {/* Action button */}
         <div className="button-container">
           <Button
-            label={isProcessing ? "Enhancing..." : "Enhance with AI"}
+            type="primary"
             onClick={handleEnhanceClick}
             disabled={isProcessing || !selectedSection || !textContent}
-          />
+          >
+            {isProcessing ? "Enhancing..." : "Enhance with AI"}
+          </Button>
         </div>
       </div>
 

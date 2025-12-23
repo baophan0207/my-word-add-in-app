@@ -230,7 +230,9 @@ const App = (props) => {
         </div>
 
         <div className="button-container">
-          <Button label="Enhance with AI" onClick={() => setIsPopupOpen(true)} />
+          <Button type="primary" onClick={() => setIsPopupOpen(true)}>
+            Enhance with AI
+          </Button>
         </div>
       </div>
 
