@@ -35,6 +35,7 @@ const formatTimeDisplay = (date, thresholdSeconds = 60) => {
 };
 
 const Enhancements = () => {
+  const [sections, setSections] = useState([]);
   const [selectedSection, setSelectedSection] = useState(null);
   const [textContent, setTextContent] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,72 +44,75 @@ const Enhancements = () => {
   // Track previously highlighted section to clear it when changing selection
   const previousHighlightRef = useRef(null);
 
-  const sections = [
-    { label: "Title", value: "title" },
-    { label: "Abstract", value: "abstract" },
-    { label: "Description", value: "description" },
-    { label: "Technical Field", value: "technical-field" },
-    { label: "Claims", value: "claims" },
-  ];
+  useEffect(() => {
+    extractContentByHeadings();
+  }, []);
 
   // Function to highlight section title in the Word document
   const highlightSectionInDocument = async (sectionValue) => {
     try {
       await Word.run(async (context) => {
         const body = context.document.body;
+        const paragraphs = body.paragraphs;
+        paragraphs.load("items, style, text");
 
-        // Clear ALL previous highlights by searching for all section titles
-        for (const section of sections) {
-          const searchText = section.label;
-          const results = body.search(searchText, { matchCase: false, matchWholeWord: true });
-          context.load(results, "items");
-          await context.sync();
-
-          // Clear highlights from found sections
-          for (let i = 0; i < results.items.length; i++) {
-            results.items[i].font.highlightColor = null;
-          }
-        }
         await context.sync();
 
-        // Now highlight the new section
-        const targetSection = sections.find((s) => s.value === sectionValue);
-        if (!targetSection) return;
+        // Clear all previous highlights globally
+        body.font.highlightColor = null;
 
-        const searchText = targetSection.label;
-        if (!searchText) return;
+        let startIndex = -1;
+        let endIndex = -1;
 
-        // Search for the section title in the document
-        const searchResults = body.search(searchText, { matchCase: false, matchWholeWord: true });
-        context.load(searchResults, "items");
-        await context.sync();
+        // Regex to match "Heading 1" through "Heading 6", with optional space
+        const headingRegex = /^Heading\s?[1-6]$/i;
 
-        if (searchResults.items.length > 0) {
-          // Load font properties to find the bold/heading version
-          for (let i = 0; i < searchResults.items.length; i++) {
-            context.load(searchResults.items[i], "font/bold, style");
-          }
-          await context.sync();
+        for (let i = 0; i < paragraphs.items.length; i++) {
+          const para = paragraphs.items[i];
+          const isHeading = headingRegex.test(para.style);
 
-          // Find the first bold occurrence
-          let targetRange = searchResults.items[0];
-          for (let i = 0; i < searchResults.items.length; i++) {
-            if (searchResults.items[i].font.bold === true) {
-              targetRange = searchResults.items[i];
+          if (startIndex === -1) {
+            // Find start of the section
+            if (para.text === sectionValue && isHeading) {
+              startIndex = i;
+            }
+          } else {
+            // Find end of the section (next heading)
+            if (isHeading) {
+              endIndex = i - 1;
               break;
             }
           }
+        }
 
-          // Apply highlight color (Yellow)
-          targetRange.font.highlightColor = "Yellow";
-          targetRange.select();
+        if (startIndex !== -1) {
+          // If no next heading found, section goes to end of document
+          if (endIndex === -1) {
+            endIndex = paragraphs.items.length - 1;
+          }
 
-          await context.sync();
+          // Adjust start index to skip the heading itself
+          const contentStartIndex = startIndex + 1;
 
-          previousHighlightRef.current = sectionValue;
-          console.log(`Highlighted: ${searchText}`);
+          if (contentStartIndex <= endIndex) {
+            const startRange = paragraphs.items[contentStartIndex].getRange("Start");
+            const endRange = paragraphs.items[endIndex].getRange("End");
+            const sectionRange = startRange.expandTo(endRange);
+
+            sectionRange.select();
+            sectionRange.font.highlightColor = "Yellow";
+
+            await context.sync();
+
+            previousHighlightRef.current = sectionValue;
+            console.log(`Highlighted content of section: ${sectionValue}`);
+          } else {
+            console.log(`Section "${sectionValue}" has no content to highlight.`);
+            paragraphs.items[startIndex].select();
+            await context.sync();
+          }
         } else {
-          console.log(`Section "${searchText}" not found in document`);
+          console.log(`Section "${sectionValue}" not found.`);
         }
       });
     } catch (error) {
@@ -138,6 +142,53 @@ const Enhancements = () => {
       setLastUpdatedTime(new Date());
     }, 5000);
   };
+
+  async function extractContentByHeadings() {
+    await Word.run(async (context) => {
+      const body = context.document.body;
+      const paragraphs = body.paragraphs;
+      paragraphs.load("items, style, text");
+
+      await context.sync();
+
+      let currentSection = null;
+      const sections = [];
+
+      // Regex to match "Heading 1" through "Heading 6", with optional space
+      const headingRegex = /^Heading\s?([1-6])$/i;
+
+      for (let i = 0; i < paragraphs.items.length; i++) {
+        const para = paragraphs.items[i];
+        const match = headingRegex.exec(para.style);
+
+        if (match) {
+          // Found a heading (Level 1-6)
+          const level = parseInt(match[1]);
+
+          currentSection = {
+            title: para.text,
+            level: level,
+            content: [],
+          };
+          sections.push(currentSection);
+        } else if (currentSection) {
+          // Add content to current section
+          currentSection.content.push(para.text);
+        }
+      }
+
+      const convertSectionToSelection = (section) => {
+        return {
+          label: section.title,
+          value: section.title,
+          level: section.level,
+          content: section.content,
+        };
+      };
+
+      setSections(sections.map(convertSectionToSelection));
+    });
+  }
 
   return (
     <div className="enhancements-container">
