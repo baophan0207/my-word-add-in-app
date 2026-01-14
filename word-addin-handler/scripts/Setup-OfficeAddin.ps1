@@ -82,6 +82,8 @@ function Get-CurrentUser {
     
     # Try multiple methods to get the actual current user
     $currentUser = $null
+    $userDomain = $null
+    $detectionMethod = "Unknown"
     
     # Method 1: Try to get the user who owns explorer.exe process
     try {
@@ -89,14 +91,42 @@ function Get-CurrentUser {
             Where-Object { $_.GetOwner().User -ne "Administrator" } | 
             Select-Object -First 1
         if ($explorerProcess) {
-            $currentUser = $explorerProcess.GetOwner().User
-            Write-Host "Detected user from explorer.exe: $currentUser"
+            $ownerInfo = $explorerProcess.GetOwner()
+            $currentUser = $ownerInfo.User
+            $userDomain = $ownerInfo.Domain
+            $detectionMethod = "explorer.exe"
+            Write-Host "Detected user from explorer.exe: $userDomain\$currentUser"
         }
     } catch {
         Write-Verbose "Could not get user from explorer.exe process"
     }
     
-    # Method 2: Check who's logged on console
+    # Method 2: Try WMI Win32_ComputerSystem for logged-in user
+    if (-not $currentUser) {
+        try {
+            $loggedInUser = (Get-WmiObject -Class Win32_ComputerSystem).UserName
+            if ($loggedInUser -and $loggedInUser -ne "") {
+                if ($loggedInUser.Contains('\')) {
+                    $parts = $loggedInUser.Split('\')
+                    $userDomain = $parts[0]
+                    $currentUser = $parts[1]
+                } else {
+                    $currentUser = $loggedInUser
+                    $userDomain = $env:COMPUTERNAME
+                }
+                if ($currentUser -ne "Administrator") {
+                    $detectionMethod = "WMI"
+                    Write-Host "Detected user from WMI: $userDomain\$currentUser"
+                } else {
+                    $currentUser = $null
+                }
+            }
+        } catch {
+            Write-Verbose "Could not get user from WMI"
+        }
+    }
+    
+    # Method 3: Check who's logged on console
     if (-not $currentUser) {
         try {
             $loggedOnUsers = quser 2>$null | Where-Object { $_ -match "console" -and $_ -notmatch "Administrator" }
@@ -104,6 +134,8 @@ function Get-CurrentUser {
                 $consoleUser = ($loggedOnUsers -split '\s+')[1]
                 if ($consoleUser -and $consoleUser -ne "Administrator") {
                     $currentUser = $consoleUser
+                    $userDomain = $env:COMPUTERNAME
+                    $detectionMethod = "quser"
                     Write-Host "Detected user from console session: $currentUser"
                 }
             }
@@ -112,7 +144,7 @@ function Get-CurrentUser {
         }
     }
     
-    # Method 3: Check environment variables from registry
+    # Method 4: Check environment variables from registry
     if (-not $currentUser) {
         try {
             # Look for recent user profiles
@@ -126,6 +158,8 @@ function Get-CurrentUser {
             
             if ($recentProfile) {
                 $currentUser = $recentProfile.Name
+                $userDomain = $env:COMPUTERNAME
+                $detectionMethod = "RecentProfile"
                 Write-Host "Detected user from recent profile: $currentUser"
             }
         } catch {
@@ -136,6 +170,8 @@ function Get-CurrentUser {
     # Fallback to environment variable (will be admin when running as admin)
     if (-not $currentUser) {
         $currentUser = $env:USERNAME
+        $userDomain = $env:USERDOMAIN
+        $detectionMethod = "Environment"
         Write-Warning "Using current environment username (may be admin): $currentUser"
     }
     
@@ -146,10 +182,152 @@ function Get-CurrentUser {
         return $null
     }
     
+    # Get user SID - this is critical for registry access when running as admin
+    $userSID = $null
+    try {
+        # Method 1: Try using NTAccount
+        $ntAccount = New-Object System.Security.Principal.NTAccount($userDomain, $currentUser)
+        $userSID = $ntAccount.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        Write-Host "Retrieved user SID via NTAccount: $userSID"
+    } catch {
+        Write-Verbose "Could not get SID via NTAccount: $_"
+        
+        # Method 2: Try Get-LocalUser (for local users)
+        try {
+            $localUser = Get-LocalUser -Name $currentUser -ErrorAction Stop
+            $userSID = $localUser.SID.Value
+            Write-Host "Retrieved user SID via Get-LocalUser: $userSID"
+        } catch {
+            Write-Verbose "Could not get SID via Get-LocalUser: $_"
+            
+            # Method 3: Query WMI for user SID
+            try {
+                $wmiUser = Get-WmiObject -Class Win32_UserAccount -Filter "Name='$currentUser'" | Select-Object -First 1
+                if ($wmiUser) {
+                    $userSID = $wmiUser.SID
+                    Write-Host "Retrieved user SID via WMI: $userSID"
+                }
+            } catch {
+                Write-Verbose "Could not get SID via WMI: $_"
+            }
+        }
+    }
+    
+    # Method 4: Parse from registry profile list as last resort
+    if (-not $userSID) {
+        try {
+            $profileListPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+            Get-ChildItem $profileListPath | ForEach-Object {
+                $profilePath = (Get-ItemProperty $_.PSPath).ProfileImagePath
+                if ($profilePath -eq $userProfile) {
+                    $userSID = $_.PSChildName
+                    Write-Host "Retrieved user SID from ProfileList: $userSID"
+                }
+            }
+        } catch {
+            Write-Warning "Could not retrieve user SID from ProfileList: $_"
+        }
+    }
+    
+    if (-not $userSID) {
+        Write-Warning "Could not retrieve user SID - registry operations may fail!"
+    }
+    
+    Write-Host "User detection method: $detectionMethod" -ForegroundColor Cyan
+    Write-Host "Target user: $currentUser (SID: $userSID)" -ForegroundColor Cyan
+    
     return @{
         Username = $currentUser
+        Domain = $userDomain
         ProfilePath = $userProfile
         DocumentsPath = Join-Path $userProfile "Documents"
+        SID = $userSID
+        DetectionMethod = $detectionMethod
+    }
+}
+
+# Function to get the correct registry path for the current user (handles admin context)
+function Get-UserRegistryPath {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$RegistrySubPath,
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable]$UserInfo = $null
+    )
+    
+    # Get user info if not provided
+    if (-not $UserInfo) {
+        $UserInfo = Get-CurrentUser
+        if (-not $UserInfo) {
+            Write-Error "Could not determine current user"
+            return $null
+        }
+    }
+    
+    $userSID = $UserInfo.SID
+    $currentUser = $UserInfo.Username
+    
+    # Check if we're running with admin privileges
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    
+    if ($isAdmin -and $userSID) {
+        # Running as admin - we need to use HKEY_USERS\<SID> to access the actual user's registry
+        Write-Host "Running as Administrator - using HKEY_USERS\$userSID for registry access"
+        
+        # Check if the user's registry hive is loaded
+        $hivePath = "Registry::HKEY_USERS\$userSID"
+        if (-not (Test-Path $hivePath)) {
+            Write-Host "User registry hive not loaded, attempting to load..."
+            
+            # Try to load the user's NTUSER.DAT
+            $ntUserDat = Join-Path $UserInfo.ProfilePath "NTUSER.DAT"
+            if (Test-Path $ntUserDat) {
+                $tempHiveName = "TempUserHive_$([guid]::NewGuid().ToString('N').Substring(0,8))"
+                try {
+                    $regLoadResult = reg.exe load "HKU\$userSID" "$ntUserDat" 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "Successfully loaded user registry hive"
+                    } else {
+                        # Hive might already be loaded (user is logged in)
+                        if (Test-Path $hivePath) {
+                            Write-Host "User registry hive is already accessible"
+                        } else {
+                            Write-Warning "Could not load user registry hive: $regLoadResult"
+                        }
+                    }
+                } catch {
+                    Write-Warning "Error loading registry hive: $_"
+                }
+            }
+        }
+        
+        $registryPath = "Registry::HKEY_USERS\$userSID\$RegistrySubPath"
+        
+        return @{
+            Path = $registryPath
+            UserSID = $userSID
+            Username = $currentUser
+            Method = "HKEY_USERS"
+            IsAdmin = $true
+        }
+    } else {
+        # Not running as admin OR couldn't get SID - use HKCU (may not work correctly if running as different user)
+        if (-not $userSID) {
+            Write-Warning "Could not get user SID - falling back to HKCU (may target wrong user!)"
+        } else {
+            Write-Host "Running in user context - using HKCU for registry access"
+        }
+        
+        $registryPath = "HKCU:\$RegistrySubPath"
+        
+        return @{
+            Path = $registryPath
+            UserSID = $userSID
+            Username = $currentUser
+            Method = "HKCU"
+            IsAdmin = $isAdmin
+        }
     }
 }
 
@@ -323,10 +501,7 @@ function Install-Addin {
         [string]$ShareDescription = "",
         
         [Parameter()]
-        [string]$FolderPath = "",
-        
-        [Parameter()]
-        [string]$RegistryPath = ""
+        [string]$FolderPath = ""
     )
 
     # Get current user information
@@ -352,9 +527,14 @@ function Install-Addin {
         Write-Host "Using current user's Documents folder: $FolderPath"
     }
     
-    if ($RegistryPath -eq "") {
-        $RegistryPath = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs"
+    # Get the correct registry path for the current user
+    $regInfo = Get-UserRegistryPath -RegistrySubPath "Software\Microsoft\Office\16.0\WEF\TrustedCatalogs" -UserInfo $userInfo
+    if (-not $regInfo) {
+        Write-Error "Could not determine registry path for user"
+        return $false
     }
+    $RegistryPath = $regInfo.Path
+    Write-Host "Using registry path: $RegistryPath (Method: $($regInfo.Method))"
 
     # 1. First ensure the manifest file exists or create it
     $manifestPath = Join-Path $FolderPath "manifest.xml"
@@ -401,15 +581,25 @@ function Install-Addin {
     # 3. Add the network share to Word's Trusted Catalogs in the current user's registry
     try {
         # Clear existing trusted catalogs (if any)
-        Remove-Item -Path "$RegistryPath\*" -Force -ErrorAction SilentlyContinue
-        Write-Host "Cleared existing trusted catalogs"
+        if (Test-Path $RegistryPath) {
+            Remove-Item -Path "$RegistryPath\*" -Force -ErrorAction SilentlyContinue
+            Write-Host "Cleared existing trusted catalogs"
+        }
         
         # Generate a new GUID for the catalog entry
         $catalogGuid = New-Guid
         $catalogPath = Join-Path $RegistryPath $catalogGuid
         
-        # Ensure the base registry key exists
+        # Ensure the base registry key exists (create parent paths if needed)
         if (-not (Test-Path $RegistryPath)) {
+            $parentPath = Split-Path $RegistryPath -Parent
+            if (-not (Test-Path $parentPath)) {
+                $grandParentPath = Split-Path $parentPath -Parent
+                if (-not (Test-Path $grandParentPath)) {
+                    New-Item -Path $grandParentPath -Force | Out-Null
+                }
+                New-Item -Path $parentPath -Force | Out-Null
+            }
             New-Item -Path $RegistryPath -Force | Out-Null
         }
         
@@ -425,15 +615,12 @@ function Install-Addin {
         New-ItemProperty -Path $catalogPath -Name "SkipCatalogUpdate" -Value 0         -PropertyType DWord  -Force | Out-Null
         
         Write-Host "Added network share to trusted add-in catalogs for user: $($userInfo.Username)" -ForegroundColor Green
+        Write-Host "  - Registry path: $catalogPath"
+        Write-Host "  - Network path: $networkPath"
     } catch {
         Write-Error "Failed to modify registry: $_"
         return $false
     }
-
-    # (Optional) Force registry refresh (this step may help Office detect changes faster)
-    reg.exe unload "HKCU\Temp" 2>$null
-    reg.exe load "HKCU\Temp" "$env:USERPROFILE\NTUSER.DAT" 2>$null
-    reg.exe unload "HKCU\Temp" 2>$null
 
     Write-Host "`nSetup completed successfully!" -ForegroundColor Green
     Write-Host "Network share path: $networkPath"
@@ -634,40 +821,57 @@ function Test-TrustedLocation {
         [string]$ShareName = "",
         
         [Parameter()]
-        [string]$RegistryPath = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs"
+        [hashtable]$UserInfo = $null
     )
     
     Write-Host "Checking if share is in trusted add-in catalogs..."
     
     # Get current user info and set defaults
-    if ($ShareName -eq "") {
-        $userInfo = Get-CurrentUser
-        if (-not $userInfo) {
+    if (-not $UserInfo) {
+        $UserInfo = Get-CurrentUser
+        if (-not $UserInfo) {
             Write-Error "Could not determine current user"
             return $false
         }
-        $ShareName = "OfficeAddins_$($userInfo.Username)"
+    }
+    
+    if ($ShareName -eq "") {
+        $ShareName = "OfficeAddins_$($UserInfo.Username)"
         Write-Host "Using user-specific share name: $ShareName"
     }
     
     $networkPath = "\\$env:COMPUTERNAME\$ShareName"
     
+    # Get the correct registry path for the current user
+    $regInfo = Get-UserRegistryPath -RegistrySubPath "Software\Microsoft\Office\16.0\WEF\TrustedCatalogs" -UserInfo $UserInfo
+    if (-not $regInfo) {
+        Write-Error "Could not determine registry path"
+        return $false
+    }
+    
+    $RegistryPath = $regInfo.Path
+    Write-Host "Using registry path: $RegistryPath (Method: $($regInfo.Method))"
+    
     # Check if the registry key exists
     if (-not (Test-Path $RegistryPath)) {
-        Write-Host "Trusted catalogs registry key doesn't exist."
+        Write-Host "Trusted catalogs registry key doesn't exist at: $RegistryPath"
         return $false
     }
     
     # Check if the share is already in trusted catalogs
     $found = $false
-    Get-ChildItem -Path $RegistryPath | ForEach-Object {
-        $catalogPath = $_.PSPath
-        $url = (Get-ItemProperty -Path $catalogPath -Name "Url" -ErrorAction SilentlyContinue).Url
-        
-        if ($url -eq $networkPath) {
-            Write-Host "Share is already in trusted add-in catalogs." -ForegroundColor Green
-            $found = $true
+    try {
+        Get-ChildItem -Path $RegistryPath -ErrorAction SilentlyContinue | ForEach-Object {
+            $catalogPath = $_.PSPath
+            $url = (Get-ItemProperty -Path $catalogPath -Name "Url" -ErrorAction SilentlyContinue).Url
+            
+            if ($url -eq $networkPath) {
+                Write-Host "Share is already in trusted add-in catalogs." -ForegroundColor Green
+                $found = $true
+            }
         }
+    } catch {
+        Write-Warning "Error reading trusted catalogs: $_"
     }
     
     return $found
@@ -1487,17 +1691,81 @@ function Open-SharedFolderDialog {
         }
     }
     
-    Write-Host "Setting focus to Word window before UI interactions..."
-    $focusResult = Set-WindowFocus -Window $wordWindow
-    if (-not $focusResult) {
-        Write-Warning "Could not set focus to Word window, but continuing anyway..."
-    } else {
-        Write-Host "Successfully set focus to Word window" -ForegroundColor Green
-    }
+    # Write-Host "Setting focus to Word window before UI interactions..."
+    # $focusResult = Set-WindowFocus -Window $wordWindow
+    # if (-not $focusResult) {
+    #     Write-Warning "Could not set focus to Word window, but continuing anyway..."
+    # } else {
+    #     Write-Host "Successfully set focus to Word window" -ForegroundColor Green
+    # }
     
     $newMethodWorked = $false
-    if ($addInsButtonFound) {        
-        # Look for More Add-ins button
+    if ($addInsButtonFound) {
+        # Wait for Add-ins panel to appear
+        Start-Sleep -Seconds 2
+        
+        # Look for Advanced link/button
+        Write-Host "Looking for Advanced link..."
+        $advancedNames = @("Advanced...", "Advanced")
+        $advancedFound = $false
+        
+        foreach ($name in $advancedNames) {
+            # First try to find by name only
+            $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::NameProperty, 
+                $name
+            )
+            
+            $advancedElement = $wordWindow.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $nameCondition
+            )
+            
+            if ($advancedElement) {
+                Write-Host "Found Advanced element: $name (ControlType: $($advancedElement.Current.ControlType.ProgrammaticName))"
+                # Use coordinate click for hyperlinks since InvokePattern may not work
+                $clickSuccess = Invoke-ClickWithRetry -Element $advancedElement -ElementName $name -UseCoordinateClickOnly
+                if ($clickSuccess) {
+                    $advancedFound = $true
+                    break
+                }
+            }
+        }
+        
+        # If not found by name, try to find by Hyperlink control type
+        if (-not $advancedFound) {
+            Write-Host "Trying to find Advanced by Hyperlink control type..."
+            $hyperlinkCondition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::Hyperlink
+            )
+            
+            $hyperlinks = $wordWindow.FindAll(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $hyperlinkCondition
+            )
+            
+            foreach ($link in $hyperlinks) {
+                $linkName = $link.Current.Name
+                Write-Host "Found hyperlink: $linkName"
+                if ($linkName -match "Advanced") {
+                    Write-Host "Found Advanced hyperlink: $linkName" -ForegroundColor Green
+                    $clickSuccess = Invoke-ClickWithRetry -Element $link -ElementName $linkName -UseCoordinateClickOnly
+                    if ($clickSuccess) {
+                        $advancedFound = $true
+                        break
+                    }
+                }
+            }
+        }
+        
+        if ($advancedFound) {
+            # Wait for Office Add-ins dialog to open
+            Start-Sleep -Seconds 3
+            $newMethodWorked = $true
+        } else {
+            Write-Warning \"Could not find Advanced link, trying fallback method...\"
+            # Look for More Add-ins button
         Write-Host "Looking for More Add-ins button..."
         $moreAddInsNames = @("More Add-ins", "Get Add-ins", "More")
         $moreAddInsFound = $false
@@ -1515,9 +1783,26 @@ function Open-SharedFolderDialog {
             
             if ($moreAddInsButton) {
                 Write-Host "Found More Add-ins button: $name"
-                # Use retry logic for clicking More Add-ins button
-                $clickSuccess = Invoke-ClickWithRetry -Element $moreAddInsButton -ElementName $name
-                if ($clickSuccess) {
+                try {
+                    $invokePattern = $moreAddInsButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                    if ($invokePattern) {
+                        $invokePattern.Invoke()
+                        Write-Host "Clicked More Add-ins button using InvokePattern"
+                        $moreAddInsFound = $true
+                        break
+                    }
+                } catch {
+                    Write-Host "Using coordinate click for More Add-ins button"
+                    $point = $moreAddInsButton.GetClickablePoint()
+                    [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([int]$point.X, [int]$point.Y)
+                    Start-Sleep -Milliseconds 200
+                    
+                    # Mouse click
+                    [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000002, 0, 0, 0, 0)
+                    Start-Sleep -Milliseconds 100
+                    [Win32Functions.Win32MouseEventAddins]::mouse_event(0x00000004, 0, 0, 0, 0)
+                    
+                    Write-Host "Clicked More Add-ins button using coordinates"
                     $moreAddInsFound = $true
                     break
                 }
@@ -1533,6 +1818,7 @@ function Open-SharedFolderDialog {
             # Press Escape to close Add-ins menu
             [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
             Start-Sleep -Seconds 1
+        }
         }
     } else {
         Write-Warning "Could not find Add-ins button in ribbon, trying fallback method..."
@@ -2034,34 +2320,95 @@ try {
     
     # 4. Check if share is in trusted locations and register if needed
     Write-Host "`nChecking trusted catalogs..." -ForegroundColor Yellow
-    $isTrusted = Test-TrustedLocation
+    $isTrusted = Test-TrustedLocation -UserInfo $userInfo
     if (-not $isTrusted) {
         Write-Host "Adding network share to trusted locations for current user..."
+        
+        # Get the correct registry path for the current user
+        $regInfo = Get-UserRegistryPath -RegistrySubPath "Software\Microsoft\Office\16.0\WEF\TrustedCatalogs" -UserInfo $userInfo
+        if (-not $regInfo) {
+            Write-Error "Could not determine registry path for user"
+            exit $ERROR_ADDIN_CONFIGURATION_FAILED
+        }
+        
+        $trustedCatalogsPath = $regInfo.Path
+        Write-Host "Target registry path: $trustedCatalogsPath (Method: $($regInfo.Method), SID: $($regInfo.UserSID))"
+        
         # Clear existing trusted catalogs (if any)
-        Remove-Item -Path "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\*" -Force -ErrorAction SilentlyContinue
+        try {
+            if (Test-Path $trustedCatalogsPath) {
+                Remove-Item -Path "$trustedCatalogsPath\*" -Force -ErrorAction SilentlyContinue
+                Write-Host "Cleared existing trusted catalogs"
+            }
+        } catch {
+            Write-Warning "Could not clear existing trusted catalogs: $_"
+        }
         
         # Add the network share to trusted catalogs
         $catalogGuid = New-Guid
-        $catalogPath = Join-Path "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs" $catalogGuid
+        $catalogPath = Join-Path $trustedCatalogsPath $catalogGuid
         
         # Ensure the base registry key exists
-        if (-not (Test-Path "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs")) {
-            New-Item -Path "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs" -Force | Out-Null
+        try {
+            if (-not (Test-Path $trustedCatalogsPath)) {
+                # Need to create parent paths as well
+                $parentPath = Split-Path $trustedCatalogsPath -Parent
+                if (-not (Test-Path $parentPath)) {
+                    $grandParentPath = Split-Path $parentPath -Parent
+                    if (-not (Test-Path $grandParentPath)) {
+                        New-Item -Path $grandParentPath -Force | Out-Null
+                    }
+                    New-Item -Path $parentPath -Force | Out-Null
+                }
+                New-Item -Path $trustedCatalogsPath -Force | Out-Null
+                Write-Host "Created registry path: $trustedCatalogsPath"
+            }
+        } catch {
+            Write-Error "Failed to create registry path: $_"
+            exit $ERROR_ADDIN_CONFIGURATION_FAILED
         }
         
         # Create a subkey for this catalog
-        New-Item -Path $catalogPath -Force | Out-Null
+        try {
+            New-Item -Path $catalogPath -Force | Out-Null
+            Write-Host "Created catalog key: $catalogPath"
+        } catch {
+            Write-Error "Failed to create catalog key: $_"
+            exit $ERROR_ADDIN_CONFIGURATION_FAILED
+        }
         
         # Set required registry values using current user's share
         $userShareName = "OfficeAddins_$($userInfo.Username)"
         $userNetworkPath = "\\$env:COMPUTERNAME\$userShareName"
         
-        New-ItemProperty -Path $catalogPath -Name "Id"              -Value $catalogGuid -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $catalogPath -Name "Url"             -Value $userNetworkPath -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $catalogPath -Name "Flags"           -Value 3           -PropertyType DWord  -Force | Out-Null
-        New-ItemProperty -Path $catalogPath -Name "Type"            -Value 2           -PropertyType DWord  -Force | Out-Null
-        New-ItemProperty -Path $catalogPath -Name "CatalogVersion"  -Value 2           -PropertyType DWord  -Force | Out-Null
-        New-ItemProperty -Path $catalogPath -Name "SkipCatalogUpdate" -Value 0         -PropertyType DWord  -Force | Out-Null
+        try {
+            New-ItemProperty -Path $catalogPath -Name "Id"              -Value $catalogGuid -PropertyType String -Force | Out-Null
+            New-ItemProperty -Path $catalogPath -Name "Url"             -Value $userNetworkPath -PropertyType String -Force | Out-Null
+            New-ItemProperty -Path $catalogPath -Name "Flags"           -Value 3           -PropertyType DWord  -Force | Out-Null
+            New-ItemProperty -Path $catalogPath -Name "Type"            -Value 2           -PropertyType DWord  -Force | Out-Null
+            New-ItemProperty -Path $catalogPath -Name "CatalogVersion"  -Value 2           -PropertyType DWord  -Force | Out-Null
+            New-ItemProperty -Path $catalogPath -Name "SkipCatalogUpdate" -Value 0         -PropertyType DWord  -Force | Out-Null
+            
+            Write-Host "Successfully set trusted catalog registry values" -ForegroundColor Green
+            Write-Host "  - Id: $catalogGuid"
+            Write-Host "  - Url: $userNetworkPath"
+            Write-Host "  - Registry: $catalogPath"
+        } catch {
+            Write-Error "Failed to set registry values: $_"
+            exit $ERROR_ADDIN_CONFIGURATION_FAILED
+        }
+        
+        # Verify the registry entries were created
+        try {
+            $verifyUrl = (Get-ItemProperty -Path $catalogPath -Name "Url" -ErrorAction SilentlyContinue).Url
+            if ($verifyUrl -eq $userNetworkPath) {
+                Write-Host "Verified: Registry entry created successfully for user: $($userInfo.Username)" -ForegroundColor Green
+            } else {
+                Write-Warning "Registry entry verification failed - URL mismatch"
+            }
+        } catch {
+            Write-Warning "Could not verify registry entry: $_"
+        }
         
         Write-Host "Added network share to trusted add-in catalogs for user: $($userInfo.Username)" -ForegroundColor Green
     }
@@ -2178,13 +2525,19 @@ try {
     Write-Host "The Word Add-in has been configured for user: $($userInfo.Username)"
     Write-Host "Configuration details:"
     Write-Host "- Target User: $($userInfo.Username)" -ForegroundColor Cyan
+    Write-Host "- User SID: $($userInfo.SID)" -ForegroundColor Cyan
+    Write-Host "- Detection Method: $($userInfo.DetectionMethod)" -ForegroundColor Cyan
     
     $userShareName = "OfficeAddins_$($userInfo.Username)"
     $userNetworkPath = "\\$env:COMPUTERNAME\$userShareName"
     
+    # Get registry info for display
+    $finalRegInfo = Get-UserRegistryPath -RegistrySubPath "Software\Microsoft\Office\16.0\WEF\TrustedCatalogs" -UserInfo $userInfo
+    
     Write-Host "- Manifest file location: $($userInfo.DocumentsPath)\$userShareName\manifest.xml" -ForegroundColor Cyan
     Write-Host "- Network share: $userNetworkPath" -ForegroundColor Cyan
-    Write-Host "- Registry configured for: $($userInfo.Username)" -ForegroundColor Cyan
+    Write-Host "- Registry path: $($finalRegInfo.Path)" -ForegroundColor Cyan
+    Write-Host "- Registry method: $($finalRegInfo.Method)" -ForegroundColor Cyan
     if ($documentUrl -ne "") {
         Write-Host "- Document opened: $documentName from $documentUrl" -ForegroundColor Cyan
     }

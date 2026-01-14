@@ -121,67 +121,80 @@ class WordAddIn extends React.Component {
     }
   };
 
-  checkAddinHandlerInstalled = () => {
+  checkAddinHandlerInstalled = async () => {
     this.setState({ checkingHandler: true });
 
-    // Create a hidden iframe to test the protocol without navigating away
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    document.body.appendChild(iframe);
+    const LOCAL_PING_URL = "http://127.0.0.1:9876/ping";
+    const MAX_RETRIES = 10;
+    const RETRY_DELAY = 500; // 500ms between retries
 
-    // Track if iframe has been removed to prevent duplicate removal
-    let iframeRemoved = false;
+    // Helper function to check if local server is responding
+    const pingLocalServer = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1000);
 
-    // Safe removal function
-    const safeRemoveIframe = () => {
-      if (!iframeRemoved && document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
-        iframeRemoved = true;
+        const response = await fetch(LOCAL_PING_URL, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+          return data.success === true;
+        }
+        return false;
+      } catch (error) {
+        // Server not responding yet
+        return false;
       }
     };
 
-    // Set a timeout - if we don't get a blur event, protocol is likely not registered
-    const timer = setTimeout(() => {
+    // First, check if handler is already running (from a previous check)
+    const alreadyRunning = await pingLocalServer();
+    if (alreadyRunning) {
+      console.log("Handler already running - detected via local ping");
       this.setState({
-        addinHandlerInstalled: false,
+        addinHandlerInstalled: true,
         checkingHandler: false,
       });
-      safeRemoveIframe();
-    }, 500);
+      return;
+    }
 
-    // If window blurs, it means protocol handler was triggered
-    window.addEventListener(
-      "blur",
-      () => {
-        clearTimeout(timer);
+    // Trigger the custom protocol to start the handler
+    console.log("Triggering wordaddin://ping to start handler...");
 
-        // When focus returns, we'll know the handler exists
-        window.addEventListener(
-          "focus",
-          () => {
-            this.setState({
-              addinHandlerInstalled: true,
-              checkingHandler: false,
-            });
-            safeRemoveIframe();
-          },
-          { once: true }
-        );
-      },
-      { once: true }
-    );
+    // Use a hidden link click to trigger protocol (more reliable than location.href)
+    const link = document.createElement("a");
+    link.href = "wordaddin://ping";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
-    // Try to trigger the protocol with a simple ping command
-    try {
-      // iframe.contentWindow.location.href = "wordaddin://ping";
-    } catch (e) {
-      // Error handling just in case
-      clearTimeout(timer);
-      this.setState({
-        addinHandlerInstalled: false,
-        checkingHandler: false,
-      });
-      safeRemoveIframe();
+    // Poll for local server to come up
+    let detected = false;
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+
+      const isRunning = await pingLocalServer();
+      if (isRunning) {
+        detected = true;
+        console.log(`Handler detected after ${i + 1} attempts`);
+        break;
+      }
+    }
+
+    this.setState({
+      addinHandlerInstalled: detected,
+      checkingHandler: false,
+    });
+
+    if (detected) {
+      console.log("Word Add-in Handler is installed and responding");
+    } else {
+      console.log("Word Add-in Handler not detected - may not be installed");
     }
   };
 
@@ -205,86 +218,38 @@ class WordAddIn extends React.Component {
         status: `Opening document "${doc.name}" with Word Add-in...`,
       });
 
-      // First open the document in Word using the ms-word protocol
-      const wordProtocolUrl = `ms-word:ofe|u|${baseUrl}`;
+      // Use custom protocol to open document and setup add-in
+      const customProtocolUrl = `wordaddin://open?documentUrl=${encodeURIComponent(
+        baseUrl
+      )}&documentName=${encodeURIComponent(doc.name)}`;
 
-      // Save the current window for focus
-      const currentWindow = window;
-      const currentWindowTitle = document.title;
+      console.log("Launching custom protocol:", customProtocolUrl);
 
-      // Open Word in a way that we can regain focus
-      window.open(wordProtocolUrl, "_blank");
+      // Launch the custom protocol handler
+      window.location.href = customProtocolUrl;
 
-      // Force focus back to our application after a short delay
+      // Add the document to active documents
+      this.setState((prevState) => ({
+        activeDocuments: {
+          ...prevState.activeDocuments,
+          [baseUrl]: {
+            lastUpdate: new Date().toISOString(),
+            status: "opening",
+            contentLength: 0,
+          },
+        },
+        status: `Document "${doc.name}" is being opened with Word Add-in Handler.`,
+      }));
+
+      // Clear status after a reasonable time
       setTimeout(() => {
-        // Try to focus back to our window
-        currentWindow.focus();
-
-        // Set a flag to track if we've successfully focused back
-        let focusAttempts = 0;
-        const focusInterval = setInterval(() => {
-          // Try to focus with several techniques
-          currentWindow.focus();
-
-          // Flash the title briefly to get user attention
-          if (focusAttempts % 2 === 0) {
-            document.title = "⚠️ Click here to continue setup ⚠️";
-          } else {
-            document.title = currentWindowTitle;
+        this.setState((prevState) => {
+          if (prevState.status.includes("is being opened")) {
+            return { status: "" };
           }
-
-          focusAttempts++;
-
-          // After 5 seconds, stop trying and restore title
-          if (focusAttempts > 10) {
-            clearInterval(focusInterval);
-            document.title = currentWindowTitle;
-          }
-        }, 500);
-
-        // Once we're fairly confident we have focus, ask for confirmation
-        setTimeout(() => {
-          clearInterval(focusInterval);
-          document.title = currentWindowTitle;
-
-          // Launch the add-in handler as a result of this user gesture
-          const customUri = `wordaddin://setup?documentName=${doc.name}`;
-
-          // Ask for confirmation - this creates a user gesture
-          if (
-            window.confirm("Document opened. Configure the Word add-in now?")
-          ) {
-            window.location.href = customUri;
-
-            // Add the document to active documents
-            this.setState((prevState) => ({
-              activeDocuments: {
-                ...prevState.activeDocuments,
-                [baseUrl]: {
-                  lastUpdate: new Date().toISOString(),
-                  status: "opening",
-                  contentLength: 0,
-                },
-              },
-            }));
-
-            // Update status
-            this.setState({
-              status: `Add-in setup initiated for "${doc.name}". Word should be configured shortly.`,
-            });
-
-            // Clear status after a reasonable time
-            setTimeout(() => {
-              this.setState((prevState) => {
-                if (prevState.status.includes("Add-in setup initiated")) {
-                  return { status: "" };
-                }
-                return null;
-              });
-            }, 7000);
-          }
-        }, 1500);
-      }, 1000);
+          return null;
+        });
+      }, 7000);
     } catch (error) {
       console.error("Error opening document:", error);
       this.setState({

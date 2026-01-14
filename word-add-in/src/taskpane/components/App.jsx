@@ -146,7 +146,7 @@ const App = (props) => {
       formData.append("metadata", JSON.stringify(metadata));
 
       // Send to server
-      fetch("http://localhost:3001/api/upload-document-with-metadata", {
+      fetch("http://10.100.100.71:3001/api/upload-document-with-metadata", {
         method: "POST",
         body: formData,
       })
